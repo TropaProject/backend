@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Квиз — Построй маршрут</title>
+  <style>
+    .step { display: none; padding: 20px; }
+    .step.active { display: block; }
+
+    .card-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .card {
+      border: 2px solid #ccc;
+      border-radius: 8px;
+      padding: 10px;
+      cursor: pointer;
+      width: 180px;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    .card img {
+      width: 100%;
+      height: 100px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+
+    .card.active {
+      border-color: #007bff;
+      background-color: #e6f0ff;
+    }
+
+    button { margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Построение маршрута</h1>
+
+  <!-- Шаг 1: Город -->
+  <div class="step active" id="step-1">
+    <h2>Выбери город</h2>
+    <div class="card-container" id="cityCardsContainer"></div>
+    <button onclick="nextStep()">Далее</button>
+  </div>
+
+  <!-- Шаг 2: Стартовая точка -->
+  <div class="step" id="step-2">
+    <h2>Укажи свою стартовую локацию</h2>
+    <input type="text" id="locationInput" placeholder="Пример: Кремль, Москва" />
+    <button onclick="nextStep()">Далее</button>
+  </div>
+
+  <!-- Шаг 3: Время -->
+  <div class="step" id="step-3">
+    <h2>Когда ты хочешь гулять?</h2>
+    <select id="timeOfDay">
+      <option value="morning">Утро</option>
+      <option value="day">День</option>
+      <option value="evening">Вечер</option>
+      <option value="night">Ночь</option>
+    </select>
+
+    <h3>Сколько времени?</h3>
+    <input type="range" min="30" max="240" step="30" id="durationRange" value="90"/>
+    <p><span id="durationValue">90</span> минут</p>
+    <button onclick="nextStep()">Далее</button>
+  </div>
+
+  <!-- Шаг 4: Транспорт и бюджет -->
+  <div class="step" id="step-4">
+    <h2>Как ты передвигаешься?</h2>
+    <select id="transport">
+      <option value="on_foot">Пешком</option>
+      <option value="bike">Велосипед</option>
+      <option value="car">Машина</option>
+    </select>
+
+    <h2>Бюджет</h2>
+    <select id="budget">
+      <option value="free">Бесплатно</option>
+      <option value="0-500">до 500₽</option>
+      <option value="500-1000">500–1000₽</option>
+      <option value="1000+">Больше 1000₽</option>
+    </select>
+
+    <button onclick="nextStep()">Далее</button>
+  </div>
+
+  <!-- Шаг 5: Интересы -->
+  <div class="step" id="step-5">
+    <h2>Что тебе интересно?</h2>
+    <div class="card-container" id="interestsContainer"></div>
+    <button onclick="nextStep()">Далее</button>
+  </div>
+
+  <!-- Шаг 6: Настроение -->
+  <div class="step" id="step-6">
+    <h2>Какое у тебя настроение?</h2>
+    <div class="card-container" id="moodsContainer"></div>
+    <button onclick="nextStep()">Далее</button>
+  </div>
+
+  <!-- Шаг 7: Пожелания -->
+  <div class="step" id="step-7">
+    <h2>Оставь пожелания (необязательно)</h2>
+    <textarea id="wishes" rows="4" cols="40" placeholder="Например: хочу побольше природы..."></textarea>
+    <button id="submitBtn">Отправить</button>
+  </div>
+
+  <script>
+    let step = 1;
+    const totalSteps = 7;
+
+    const selected = {
+      city: null,
+      location: '',
+      timeOfDay: '',
+      duration: 90,
+      transport: '',
+      budget: '',
+      interests: [],
+      mood: [],
+      description: ''
+    };
+
+    function nextStep() {
+      document.getElementById(`step-${step}`).classList.remove('active');
+      step++;
+      document.getElementById(`step-${step}`).classList.add('active');
+
+      if (step === 3) {
+        document.getElementById('durationRange').addEventListener('input', function () {
+          document.getElementById('durationValue').textContent = this.value;
+        });
+      }
+    }
+
+    window.onload = () => {
+      fetch('/api/form/')
+        .then(res => res.json())
+        .then(res => {
+          const data = res.data;
+
+          // Города
+          const cityContainer = document.getElementById('cityCardsContainer');
+          data.cities.forEach(city => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `
+              <img src="${city.image || 'https://via.placeholder.com/300x100'}" alt="${city.name}">
+              <h3>${city.name}</h3>
+            `;
+            card.addEventListener('click', () => {
+              selected.city = city.id;
+              document.querySelectorAll('#cityCardsContainer .card').forEach(c => c.classList.remove('active'));
+              card.classList.add('active');
+            });
+            cityContainer.appendChild(card);
+          });
+
+          // Интересы
+          const interestsContainer = document.getElementById('interestsContainer');
+          data.interests.forEach(interest => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `
+              <div style="font-size: 32px;">${interest.emoji}</div>
+              <h3>${interest.label}</h3>
+              <p style="font-size: 14px;">${interest.description}</p>
+            `;
+            card.addEventListener('click', () => {
+              const idx = selected.interests.indexOf(interest.id);
+              if (idx > -1) {
+                selected.interests.splice(idx, 1);
+                card.classList.remove('active');
+              } else {
+                selected.interests.push(interest.id);
+                card.classList.add('active');
+              }
+            });
+            interestsContainer.appendChild(card);
+          });
+
+          // Настроения
+          const moodsContainer = document.getElementById('moodsContainer');
+          data.moods.forEach(mood => {
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `
+              <div style="font-size: 32px;">${mood.emoji}</div>
+              <h3>${mood.label}</h3>
+              <p style="font-size: 14px;">${mood.description}</p>
+            `;
+            card.addEventListener('click', () => {
+              const idx = selected.mood.indexOf(mood.id);
+              if (idx > -1) {
+                selected.mood.splice(idx, 1);
+                card.classList.remove('active');
+              } else {
+                selected.mood.push(mood.id);
+                card.classList.add('active');
+              }
+            });
+            moodsContainer.appendChild(card);
+          });
+        });
+    };
+
+    document.getElementById('submitBtn').addEventListener('click', function () {
+      selected.location = document.getElementById('locationInput').value;
+      selected.timeOfDay = document.getElementById('timeOfDay').value;
+      selected.duration = parseInt(document.getElementById('durationRange').value);
+      selected.transport = document.getElementById('transport').value;
+      selected.budget = document.getElementById('budget').value;
+      selected.description = document.getElementById('wishes').value;
+
+      const payload = {
+        user_id: "anon-" + Math.random().toString(36).substring(2, 10),
+        city_id: selected.city,
+        time_of_day: selected.timeOfDay,
+        interests: selected.interests,
+        mood: selected.mood,
+        budget: selected.budget,
+        transport: selected.transport,
+        duration_minutes: selected.duration,
+        description: selected.description
+      };
+
+      fetch('/api/generate/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify(payload)
+      })
+      .then(res => res.json())
+      .then(data => {
+        alert("Готово! Данные отправлены.");
+        console.log(data);
+      });
+    });
+
+    function getCookie(name) {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+          const cookie = cookies[i].trim();
+          if (cookie.substring(0, name.length + 1) === (name + '=')) {
+            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+            break;
+          }
+        }
+      }
+      return cookieValue;
+    }
+  </script>
+</body>
+</html>

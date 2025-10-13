@@ -1,0 +1,271 @@
+<!-- templates/places/place_search.html -->
+{% load static %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Поиск мест</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 20px; }
+    .form-row { margin-bottom: 12px; }
+    .results { margin-top: 20px; }
+    .card { border: 1px solid #ddd; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+    .muted { color: #666; font-size: 12px; }
+    pre { background: #f6f8fa; padding: 10px; overflow: auto; border-radius: 6px; }
+    .thumb {
+  max-width: 200px;   /* ограничение по ширине */
+  max-height: 150px;  /* опциональное ограничение по высоте */
+  object-fit: cover;  /* обрезает лишнее, сохраняя пропорции */
+  border-radius: 6px;
+  display: block;
+  margin-top: 8px;
+}
+  </style>
+</head>
+<body>
+  <h1>Поиск туристических мест</h1>
+
+  <div id="form">
+    <div class="form-row">
+      <label><b>Город:</b></label><br/>
+      <select id="citySelect">
+        <option value="">— выберите —</option>
+        {% for c in form.fields.city.queryset %}
+          <option value="{{ c.pk }}">{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label><b>Район:</b></label><br/>
+      <select id="areaSelect" disabled>
+        <option value="">— все районы —</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label><b>Категории:</b></label><br/>
+      {% for value,label in form.fields.categories.choices %}
+        <label style="display:inline-block; margin-right:12px;">
+          <input type="checkbox" name="categories" value="{{ value }}"> {{ label }}
+        </label>
+      {% endfor %}
+    </div>
+
+    <div class="form-row">
+      <label><b>Лимит:</b></label><br/>
+      <input id="limitInput" type="number" min="1" max="100" value="20" />
+    </div>
+
+    <div class="form-row">
+      <label><b>Язык:</b></label><br/>
+      <select id="langSelect">
+        <option value="ru" selected>Русский</option>
+        <option value="en">English</option>
+      </select>
+    </div>
+
+    <button id="findBtn">Найти</button>
+    <button id="saveBtn" style="margin-left:10px;">Сохранить все в БД</button>
+
+    <span class="muted">Запрос по bbox выбранного района (или города, если район не выбран).</span>
+  </div>
+
+  <div class="results">
+    <h2>Результаты</h2>
+    <div id="cards"></div>
+    <details>
+      <summary>Сырой JSON</summary>
+      <pre id="rawJson"></pre>
+    </details>
+  </div>
+
+ <script>
+  // ==== CSRF token (Django) ====
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+  const csrftoken = getCookie('csrftoken');
+
+  // ==== Элементы ====
+  const citySelect = document.getElementById('citySelect');
+  const areaSelect = document.getElementById('areaSelect');
+  const findBtn = document.getElementById('findBtn');
+  const saveBtn = document.getElementById('saveBtn'); // кнопка "Сохранить в БД"
+  const cards = document.getElementById('cards');
+  const rawJson = document.getElementById('rawJson');
+
+  let lastFetchedPoints = []; // сюда складываем найденные точки для сохранения
+
+  // ==== Подгрузка районов ====
+  citySelect.addEventListener('change', async () => {
+    const city_id = citySelect.value;
+    areaSelect.innerHTML = '<option value="">— все районы —</option>';
+    areaSelect.disabled = true;
+    if (!city_id) return;
+    const resp = await fetch(`/api/areas?city_id=${encodeURIComponent(city_id)}`);
+    const data = await resp.json();
+    if (data.areas && data.areas.length) {
+      for (const a of data.areas) {
+        const opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = a.name;
+        areaSelect.appendChild(opt);
+      }
+      areaSelect.disabled = false;
+    }
+  });
+
+  // ==== Поиск точек ====
+  findBtn.addEventListener('click', async () => {
+    cards.innerHTML = 'Загрузка...';
+    rawJson.textContent = '';
+    lastFetchedPoints = [];
+
+    const city_id = citySelect.value;
+    const area_id = areaSelect.value || null;
+    const categories = Array.from(document.querySelectorAll('input[name="categories"]:checked')).map(i => i.value);
+    const limit = document.getElementById('limitInput').value || 20;
+    const lang = document.getElementById('langSelect').value || 'ru';
+
+    if (!city_id) {
+      cards.innerHTML = '<div class="card">Выберите город.</div>';
+      return;
+    }
+    if (!categories.length) {
+      cards.innerHTML = '<div class="card">Выберите хотя бы одну категорию.</div>';
+      return;
+    }
+
+    try {
+      const resp = await fetch('/api/places', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrftoken,
+        },
+        body: JSON.stringify({ city_id, area_id, categories, limit: Number(limit), lang })
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        cards.innerHTML = `<div class="card">Ошибка: ${data.error || 'не удалось получить данные'}</div>`;
+        rawJson.textContent = JSON.stringify(data, null, 2);
+        return;
+      }
+
+      const features = data.features || [];
+      if (!features.length) {
+        cards.innerHTML = '<div class="card">Ничего не найдено.</div>';
+        rawJson.textContent = JSON.stringify(data, null, 2);
+        return;
+      }
+
+      cards.innerHTML = '';
+      lastFetchedPoints = features.map(f => {
+        const p = f.properties || {};
+        const coordsLat = f.geometry?.coordinates ? f.geometry.coordinates[1] : null;
+        const coordsLng = f.geometry?.coordinates ? f.geometry.coordinates[0] : null;
+        const img = p.image_url || p.image_url_wiki || null;
+        const desc = p.description || p.description_wiki || '';
+
+        // Отрисовка карточки
+        const interestsHtml = (p.interests || []).map(i => `<span class="tag interest">${i}</span>`).join(' ');
+        const moodsHtml = (p.moods || []).map(m => `<span class="tag mood">${m}</span>`).join(' ');
+        const tags = (p.tags || []).join(', ');
+        const rawTags = (p.raw_tags || []).join(', ');
+
+        let wikiUrl = null;
+        const wikiPage = p.wiki_and_media?.wikipedia || null;
+        if (wikiPage && wikiPage.includes(':')) {
+          const idx = wikiPage.indexOf(':');
+          const langCode = wikiPage.slice(0, idx);
+          const title = wikiPage.slice(idx + 1);
+          wikiUrl = `https://${langCode}.wikipedia.org/wiki/${encodeURIComponent(title)}`;
+        }
+
+        const el = document.createElement('div');
+        el.className = 'card';
+        el.innerHTML = `
+          <div><b>${p.name || p.address_line1 || '(без названия)'}</b></div>
+          ${p.formatted ? `<div class="muted">${p.formatted}</div>` : ''}
+          ${coordsLat && coordsLng ? `<div class="muted"><a href="https://maps.google.com/?q=${coordsLat},${coordsLng}" target="_blank">${coordsLat}, ${coordsLng}</a></div>` : ''}
+          ${img ? `<img class="thumb" src="${img}" alt="${p.name}" loading="lazy">` : ''}
+          ${desc ? `<div style="margin-top:6px;">${desc}${wikiUrl ? ` — <a href="${wikiUrl}" target="_blank" rel="noopener">Википедия</a>` : ''}</div>` : ''}
+          ${(p.interests?.length || p.moods?.length) ? `<div style="margin-top:6px;"><b>Интересы:</b> ${interestsHtml} <b>Настроения:</b> ${moodsHtml}</div>` : ''}
+          ${(p.tags?.length || p.raw_tags?.length) ? `<div class="muted" style="margin-top:4px;"><b>Теги GPT:</b> ${tags} <b>Теги API:</b> ${rawTags}</div>` : ''}
+          <details style="margin-top:6px;">
+            <summary>Все данные точки</summary>
+            <pre>${JSON.stringify(f, null, 2)}</pre>
+          </details>
+        `;
+        cards.appendChild(el);
+
+        // Данные для сохранения в БД
+        return {
+          name: p.name || p.address_line1 || '(без названия)',
+          description: desc,
+          tags: p.tags || [],
+          image_url: img,
+          coordinates_lat: coordsLat,
+          coordinates_lng: coordsLng,
+          average_visit_duration: p.average_visit_duration || 60,
+          average_cost: p.average_cost || null,
+          best_visit_time: p.best_visit_time || ['any'],
+          working_hours_json: p.working_hours_json || null,
+          is_seasonal: p.is_seasonal || false,
+          seasonal_months: p.seasonal_months || null,
+          interests: p.interests || [],
+          moods: p.moods || []
+        };
+      });
+
+      rawJson.textContent = JSON.stringify(data, null, 2);
+
+    } catch (e) {
+      console.error(e);
+      cards.innerHTML = `<div class="card">Сетевая ошибка</div>`;
+    }
+  });
+
+  // ==== Сохранение точек в БД ====
+  saveBtn.addEventListener('click', async () => {
+    if (!lastFetchedPoints.length) {
+      alert('Нет данных для сохранения');
+      return;
+    }
+    const city_id = citySelect.value;
+    try {
+      const resp = await fetch('/api/save_points', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrftoken,
+        },
+        body: JSON.stringify({ city_id, points: lastFetchedPoints })
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        alert(`Сохранено ${data.created_count} точек`);
+      } else {
+        alert(`Ошибка сохранения: ${data.error}`);
+      }
+    } catch (err) {
+      alert('Ошибка сети при сохранении');
+    }
+  });
+</script>
+
+</body>
+</html>
