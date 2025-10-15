@@ -36,6 +36,7 @@ CACHES = {
     }
 }
 GEOAPIFY_API_KEY=config('GEOAPIFY_API_KEY')
+OPENAI_API_KEY=config('OPENAI_API_KEY')
 # Application definition
 
 DJANGO_APPS = [
@@ -56,7 +57,8 @@ LOCAL_APPS = [
     'apps.partners',
     'apps.routes',
     'apps.users',
-    'apps.articles'
+    'apps.articles',
+    'apps.core'
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
