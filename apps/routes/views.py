@@ -157,10 +157,11 @@ class CancelRouteView(APIView):
             )
 
         route.status = Route.WalkStatus.CANCELLED
-        # TODO Добавить связь с Feedback
-        if hasattr(route, "cancel_reason"):
-            route.cancel_reason = reason
-        route.save(update_fields=["status"] + (["cancel_reason"] if hasattr(route, "cancel_reason") else []))
+        Feedback.objects.create(
+            route=route,
+            user=request.user,
+            comment=reason
+        )
 
         return Response(
             {

@@ -69,10 +69,12 @@ class Point(models.Model):
     tags = ArrayField(models.CharField(max_length=600), help_text='Массив тегов')
     image_url = models.URLField(null=True, blank=True, help_text='URL фотографии точки')
     city = models.ForeignKey(City, on_delete=models.CASCADE, help_text='Город, к которому относится точка')
+    area=models.ForeignKey(CityArea,on_delete=models.CASCADE,help_text='Район точки', null=True, blank=True)
     interests = models.ManyToManyField(Interest, blank=True)
     moods = models.ManyToManyField(Mood,blank=True)
     coordinates_lat = models.DecimalField(max_digits=9, decimal_places=6, help_text='Широта')
     coordinates_lng = models.DecimalField(max_digits=9, decimal_places=6, help_text='Долгота')
+    address=models.CharField(max_length=50, null=True, blank=True)
     average_visit_duration = models.IntegerField(help_text='Среднее время посещения в минутах')
     average_cost = models.IntegerField(null=True, blank=True, help_text='Средняя стоимость посещения')
     is_partner = models.BooleanField(default=False, help_text='Является ли точка партнерской')
@@ -181,9 +183,7 @@ class Feedback(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="feedbacks",null=True, blank=True)
     rating = models.PositiveSmallIntegerField(help_text="Оценка маршрута (1–5)", null=True, blank=True)
     comment = models.TextField(null=True, blank=True, help_text="Текстовый отзыв")
-    session_id = models.CharField(max_length=100, null=True, blank=True)
     going = models.BooleanField(help_text="Планирует ли пользователь идти по маршруту", default=False)
-
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
