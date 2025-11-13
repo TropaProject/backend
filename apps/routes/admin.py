@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import City, CityArea, Interest, Mood, Point, PointEmbedding, Route, Feedback
+from .models import City, CityArea, Interest, Mood, Point, PointEmbedding, Route, Feedback, InterestCategory, Tag
 
 
 @admin.register(City)
@@ -11,9 +11,15 @@ class CityAdmin(admin.ModelAdmin):
 
 @admin.register(CityArea)
 class CityAreaAdmin(admin.ModelAdmin):
-    list_display = ("name", "city", "latitude", "longitude")
+    list_display = ('id',"name", "city", "latitude", "longitude")
     search_fields = ("name", "city__name")
     list_filter = ("city",)
+
+
+@admin.register(InterestCategory)
+class MoodAdmin(admin.ModelAdmin):
+    list_display = ("id", "label")
+    search_fields = ("id", "label")
 
 
 @admin.register(Interest)
@@ -55,3 +61,9 @@ class FeedbackAdmin(admin.ModelAdmin):
     list_display = ("id", "route", "going", "created_at")
     search_fields = ("id", "route__id")
     list_filter = ("going", "created_at")
+
+
+@admin.register(Tag)
+class InterestAdmin(admin.ModelAdmin):
+    list_display = ('id',"name", "category")
+    search_fields = ("name", "category")

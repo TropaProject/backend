@@ -1,0 +1,278 @@
+[
+  {
+    "model": "routes.Point",
+    "fields": {
+      "name": "Памятник Сергею Есенину",
+      "description": "Это место, где можно почувствовать дух поэзии прямо в сердце Москвы. Бронзовый образ поэта на Тверском бульваре словно приглашает остановиться, вдохнуть свежий воздух и вспомнить строки, которые звучат в душе каждого.",
+      "tags": ["12", "14", "20"],
+      "interests": ["monuments", "historical", "photo_spots"],
+      "moods": ["inspiration", "romantic", "chill"],
+      "image_url": "https://dynamic-media-cdn.tripadvisor.com/media/photo-o/28/f0/12/3c/caption.jpg?w=1100&h=-1&s=1",
+      "city": "moscow",
+      "area": 5,
+      "coordinates_lat": 55.7645,
+      "coordinates_lng": 37.6047,
+      "address": "Москва, Тверской бульвар",
+      "average_visit_duration": 20,
+      "average_cost": 0,
+      "is_partner": false,
+      "partner_tier": null,
+      "partner": null,
+      "working_hours_json": {
+        "mon": "00:00-23:59",
+        "tue": "00:00-23:59",
+        "wed": "00:00-23:59",
+        "thu": "00:00-23:59",
+        "fri": "00:00-23:59",
+        "sat": "00:00-23:59",
+        "sun": "00:00-23:59"
+      },
+      "best_visit_time": ["any"],
+      "is_seasonal": false,
+      "seasonal_months": []
+    }
+  },
+  {
+    "model": "routes.Point",
+    "fields": {
+      "name": "Храм Знамения Иконы Божией Матери за Петровскими Воротами",
+      "description": "Уютный храм в стиле московского барокко, спрятанный среди городских улиц. Здесь можно почувствовать тишину и спокойствие, а заодно полюбоваться архитектурой, которая хранит историю нескольких веков.",
+      "tags": ["12", "14"],
+      "interests": ["monuments", "historical", "museums"],
+      "moods": ["inspiration", "chill"],
+      "image_url": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTXqCIf8aBwQBUNZaC6VvtQWjSIHodMQOhO_A&s",
+      "city": "moscow",
+      "area": 5,
+      "coordinates_lat": 55.769312,
+      "coordinates_lng": 37.614347,
+      "address": "1-й Колобовский пер., 1, стр. 2",
+      "average_visit_duration": 30,
+      "average_cost": 0,
+      "is_partner": false,
+      "partner_tier": null,
+      "partner": null,
+      "working_hours_json": {
+        "mon": "09:00-19:00",
+        "tue": "09:00-19:00",
+        "wed": "09:00-19:00",
+        "thu": "09:00-19:00",
+        "fri": "09:00-19:00",
+        "sat": "09:00-19:00",
+        "sun": "09:00-19:00"
+      },
+      "best_visit_time": ["morning", "afternoon"],
+      "is_seasonal": false,
+      "seasonal_months": []
+    }
+  },
+  {
+    "model": "routes.Point",
+    "fields": {
+      "name": "Белая площадь",
+      "description": "Современный квартал у Белорусского вокзала, где небоскрёбы соседствуют с историческими зданиями. Это отличное место, чтобы прогуляться, сделать красивые фотографии и увидеть, как Москва соединяет прошлое и будущее.",
+      "tags": ["13", "14"],
+      "interests": ["modern_architecture", "photo_spots", "shopping"],
+      "moods": ["explore", "inspiration"],
+      "image_url": "https://belaya-ploschad.bc-moscow.ru/img/infrastruktura/foto1.jpg",
+      "city": "moscow",
+      "area": 5,
+      "coordinates_lat": 55.777783,
+      "coordinates_lng": 37.586886,
+      "address": "Лесная ул., 5, Москва",
+      "average_visit_duration": 40,
+      "average_cost": 0,
+      "is_partner": false,
+      "partner_tier": null,
+      "partner": null,
+      "working_hours_json": {
+        "mon": "00:00-23:59",
+        "tue": "00:00-23:59",
+        "wed": "00:00-23:59",
+        "thu": "00:00-23:59",
+        "fri": "00:00-23:59",
+        "sat": "00:00-23:59",
+        "sun": "00:00-23:59"
+      },
+      "best_visit_time": ["afternoon", "evening"],
+      "is_seasonal": false,
+      "seasonal_months": []
+    }
+  },
+  {
+    "model": "routes.Point",
+    "fields": {
+      "name": "Грот «Руины»",
+      "description": "Необычное сооружение в Александровском саду, созданное из обломков домов, разрушенных в 1812 году. Оно напоминает о том, что Москва умеет возрождаться, и прогулка сюда превращается в маленькое путешествие в историю.",
+      "tags": ["12", "14", "20"],
+      "interests": ["monuments", "historical", "photo_spots"],
+      "moods": ["inspiration", "explore"],
+      "image_url": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQguDslHZnev7ccM9h5NkFXvidAuh7_d_YoLA&s",
+      "city": "moscow",
+      "area": 5,
+      "coordinates_lat": 55.7537,
+      "coordinates_lng": 37.6153,
+      "address": "Москва, Александровский сад",
+      "average_visit_duration": 20,
+      "average_cost": 0,
+      "is_partner": false,
+      "partner_tier": null,
+      "partner": null,
+      "working_hours_json": {
+        "mon": "06:00-23:00",
+        "tue": "06:00-23:00",
+        "wed": "06:00-23:00",
+        "thu": "06:00-23:00",
+        "fri": "06:00-23:00",
+        "sat": "06:00-23:00",
+        "sun": "06:00-23:00"
+      },
+      "best_visit_time": ["morning", "afternoon"],
+      "is_seasonal": false,
+      "seasonal_months": []
+    }
+  },
+  {
+    "model": "routes.Point",
+    "fields": {
+      "name": "Третьяковский проезд",
+      "description": "Атмосферная улица с арками и бутиками, где старина встречается с современным шиком. Здесь приятно пройтись пешком, рассмотреть архитектуру и почувствовать себя в центре культурной Москвы.",
+      "tags": ["8", "12", "14"],
+      "interests": ["shopping", "old_streets", "historical"],
+      "moods": ["explore", "spontaneous"],
+      "image_url": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQrxHOoYXaO8Hw9leO7FxC6iq26QwS0q7usRQ&s",
+      "city": "moscow",
+      "area": 5,
+      "coordinates_lat": 55.7586,
+      "coordinates_lng": 37.6233,
+      "address": "Москва, Третьяковский проезд",
+      "average_visit_duration": 20,
+      "average_cost": 0,
+      "is_partner": false,
+      "partner_tier": null,
+      "partner": null,
+      "working_hours_json": {
+      },
+      "best_visit_time": ["morning", "afternoon"],
+      "is_seasonal": false,
+      "seasonal_months": []
+    }
+  },
+  {
+    "model": "routes.Point",
+    "fields": {
+      "name": "Часовня Иконы Божией Матери",
+      "description": "Небольшая, но очень душевная часовня, где можно ненадолго остановиться в шумном городе. Она дарит ощущение уюта и напоминает о духовных корнях Москвы.",
+      "tags": ["12", "14"],
+      "interests": ["monuments", "historical", "museums"],
+      "moods": ["inspiration", "chill"],
+      "image_url": "",
+      "city": "moscow",
+      "area": 5,
+      "coordinates_lat": 55.756660,
+      "coordinates_lng": 37.631218,
+      "address": "площадь Ильинские Ворота, 2",
+      "average_visit_duration": 5,
+      "average_cost": 0,
+      "is_partner": false,
+      "partner_tier": null,
+      "partner": null,
+      "working_hours_json": {
+      },
+      "best_visit_time": ["morning", "afternoon"],
+      "is_seasonal": false,
+      "seasonal_months": []
+    }
+  },
+  {
+    "model": "routes.Point",
+    "fields": {
+      "name": "Подворье Патриарха Московского",
+      "description": "Это место хранит атмосферу древней Москвы и её монастырских традиций. Прогулка сюда — это возможность увидеть архитектуру XVII века и почувствовать дыхание истории.",
+      "tags": ["12", "14"],
+      "interests": ["monuments", "historical", "museums"],
+      "moods": ["inspiration", "explore"],
+      "image_url": "",
+      "city": "moscow",
+      "area": 5,
+      "coordinates_lat": 55.756629,
+      "coordinates_lng": 37.621435,
+      "address": "Москва, ул. Никольская, 11",
+      "average_visit_duration": 40,
+      "average_cost": 0,
+      "is_partner": false,
+      "partner_tier": null,
+      "partner": null,
+      "working_hours_json": {
+        "mon": "09:00-19:00",
+        "tue": "09:00-19:00",
+        "wed": "09:00-19:00",
+        "thu": "09:00-19:00",
+        "fri": "09:00-19:00",
+        "sat": "09:00-19:00",
+        "sun": "09:00-19:00"
+      },
+      "best_visit_time": ["morning", "afternoon"],
+      "is_seasonal": false,
+      "seasonal_months": []
+    }
+  },
+  {
+    "model": "routes.Point",
+    "fields": {
+      "name": "Бизнес-центр «Оружейный»",
+      "description": "Современный небоскрёб, который стал новой доминантой района. Его стоит увидеть, чтобы оценить, как Москва меняется и растёт, сохраняя при этом свою уникальную энергетику.",
+      "tags": ["13", "14", "15"],
+      "interests": ["modern_architecture", "photo_spots"],
+      "moods": ["explore", "inspiration"],
+      "image_url": "https://oruzheyny.bc-moscow.ru/img/carousel/opisanie.jpg",
+      "city": "moscow",
+      "area": 5,
+      "coordinates_lat": 55.7725,
+      "coordinates_lng": 37.6019,
+      "address": "Москва, ул. Оружейный переулок, 41",
+      "average_visit_duration": 30,
+      "average_cost": 0,
+      "is_partner": false,
+      "partner_tier": null,
+      "partner": null,
+      "working_hours_json": {
+      },
+      "best_visit_time": ["afternoon", "evening"],
+      "is_seasonal": false,
+      "seasonal_months": []
+    }
+  },
+  {
+    "model": "routes.Point",
+    "fields": {
+      "name": "Доходный дом М. В. Сокол",
+      "description": "Это здание — настоящий шедевр московского модерна. Его фасад с майоликой и декоративными элементами превращает обычную прогулку в знакомство с искусством, которое оживает прямо на улицах города.",
+      "tags": ["12", "13", "14"],
+      "interests": ["historical", "monuments", "photo_spots"],
+      "moods": ["explore", "inspiration"],
+      "image_url": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSnAeUoA82BOHLA-P3cUW_PUYTDnLW2_jj6mQ&s",
+      "city": "moscow",
+      "area": 5,
+      "coordinates_lat": 55.7614,
+      "coordinates_lng": 37.6239,
+      "address": "Москва, ул. Кузнецкий Мост, 3, стр. 2",
+      "average_visit_duration": 30,
+      "average_cost": 0,
+      "is_partner": false,
+      "partner_tier": null,
+      "partner": null,
+      "working_hours_json": {
+        "mon": "00:00-23:59",
+        "tue": "00:00-23:59",
+        "wed": "00:00-23:59",
+        "thu": "00:00-23:59",
+        "fri": "00:00-23:59",
+        "sat": "00:00-23:59",
+        "sun": "00:00-23:59"
+      },
+      "best_visit_time": ["any"],
+      "is_seasonal": false,
+      "seasonal_months": []
+    }
+  }
+]

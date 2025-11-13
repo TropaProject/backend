@@ -36,7 +36,7 @@ CACHES = {
     }
 }
 GEOAPIFY_API_KEY=config('GEOAPIFY_API_KEY')
-OPENAI_API_KEY=config('OPENAI_API_KEY')
+OPENAI_API_KEY='sk-NwPirYGRqm5vZy8n2DEXg9uRK3RvPBlI'
 # Application definition
 
 DJANGO_APPS = [

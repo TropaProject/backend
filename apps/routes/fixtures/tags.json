@@ -1,0 +1,182 @@
+[
+  {
+    "model": "routes.Tag",
+    "pk": 1,
+    "fields": {
+      "name": "Парк",
+      "category": "type",
+      "description": "Парк или сквер, зелёная зона для прогулок"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 2,
+    "fields": {
+      "name": "Музей",
+      "category": "type",
+      "description": "Музей, галерея или выставка"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 3,
+    "fields": {
+      "name": "Кафе",
+      "category": "type",
+      "description": "Кафе или кофейня для отдыха и встреч"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 4,
+    "fields": {
+      "name": "Ресторан",
+      "category": "type",
+      "description": "Ресторан для полноценного приёма пищи"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 5,
+    "fields": {
+      "name": "Бар",
+      "category": "type",
+      "description": "Бар или паб для вечернего отдыха"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 6,
+    "fields": {
+      "name": "Смотровая площадка",
+      "category": "type",
+      "description": "Место с панорамным видом на город или природу"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 7,
+    "fields": {
+      "name": "Набережная",
+      "category": "type",
+      "description": "Прогулочная зона вдоль реки или водоёма"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 8,
+    "fields": {
+      "name": "Пешеходная улица",
+      "category": "type",
+      "description": "Улица или бульвар для прогулок без машин"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 9,
+    "fields": {
+      "name": "Рынок",
+      "category": "type",
+      "description": "Рынок или ярмарка для покупок и прогулок"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 10,
+    "fields": {
+      "name": "Торговый центр",
+      "category": "type",
+      "description": "Крупный торговый комплекс с магазинами и развлечениями"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 11,
+    "fields": {
+      "name": "Спортивная площадка",
+      "category": "type",
+      "description": "Место для занятий спортом, каток, стадион"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 12,
+    "fields": {
+      "name": "Историческое",
+      "category": "feature",
+      "description": "Место с исторической ценностью или памятник"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 13,
+    "fields": {
+      "name": "Современное",
+      "category": "feature",
+      "description": "Новое, модное, урбанистическое пространство"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 14,
+    "fields": {
+      "name": "Фотогеничное",
+      "category": "feature",
+      "description": "Место, где любят фотографироваться"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 15,
+    "fields": {
+      "name": "С видом",
+      "category": "feature",
+      "description": "Место с красивым видом или панорамой"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 16,
+    "fields": {
+      "name": "Уютное",
+      "category": "feature",
+      "description": "Тихое и комфортное место для отдыха"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 17,
+    "fields": {
+      "name": "Для детей",
+      "category": "feature",
+      "description": "Подходит для семей с детьми, безопасная атмосфера"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 18,
+    "fields": {
+      "name": "С животными",
+      "category": "feature",
+      "description": "Можно посещать с питомцами"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 19,
+    "fields": {
+      "name": "Сезонное",
+      "category": "feature",
+      "description": "Работает только в определённое время года"
+    }
+  },
+  {
+    "model": "routes.Tag",
+    "pk": 20,
+    "fields": {
+      "name": "Скрытая жемчужина",
+      "category": "feature",
+      "description": "Малоизвестное атмосферное место"
+    }
+  }
+]

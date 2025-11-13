@@ -34,18 +34,37 @@ class CityArea(models.Model):
         return f"{self.name} ({self.city.name})"
 
 
+class InterestCategory(models.Model):
+    id = models.CharField(max_length=50, primary_key=True, help_text='Идентификатор категории')
+    label = models.CharField(max_length=100, help_text='Название категории')
+
+    class Meta:
+        db_table = 'interest_categories'
+        verbose_name = 'Категория интереса'
+        verbose_name_plural = 'Категории интересов'
+
+    def __str__(self):
+        return self.label
+
+
 class Interest(models.Model):
     id = models.CharField(max_length=50, primary_key=True, help_text='Идентификатор интереса, например "parks"')
     label = models.CharField(max_length=100, help_text='Название интереса, например "Парки"')
     description = models.TextField(help_text='Описание интереса для показа пользователю')
+    category = models.ForeignKey(
+        InterestCategory,
+        on_delete=models.CASCADE,
+        related_name="interests",
+        help_text='Категория интереса',
+        null=True, blank=True,
+    )
 
     class Meta:
         db_table = 'interests'
         verbose_name = 'Интерес'
         verbose_name_plural = 'Интересы'
-
     def __str__(self):
-        return f"{self.label}"
+        return f'{self.label} Категория: {self.category}'
 
 
 class Mood(models.Model):
@@ -61,12 +80,27 @@ class Mood(models.Model):
     def __str__(self):
         return f"{self.label}"
 
+class Tag(models.Model):
+    name = models.CharField(max_length=100, unique=True, help_text="Название тега (например, 'romantic')")
+    description = models.TextField(null=True, blank=True, help_text="Описание тега для эмбеддингов")
+    category = models.CharField(
+        max_length=50,
+        choices=[
+            ('interest', 'Интерес'),
+            ('mood', 'Настроение'),
+            ('type', 'Тип места'),
+            ('feature', 'Особенность'),
+        ],
+        help_text="Категория тега"
+    )
 
+    def __str__(self):
+        return self.name
 class Point(models.Model):
     id = models.CharField(max_length=400, primary_key=True, default=uuid.uuid4)
     name = models.CharField(max_length=1000, help_text='Название точки')
     description = models.TextField(help_text='Описание точки')
-    tags = ArrayField(models.CharField(max_length=600), help_text='Массив тегов')
+    tags = models.ManyToManyField(Tag, blank=True, related_name="points")
     image_url = models.URLField(null=True, blank=True, help_text='URL фотографии точки')
     city = models.ForeignKey(City, on_delete=models.CASCADE, help_text='Город, к которому относится точка')
     area=models.ForeignKey(CityArea,on_delete=models.CASCADE,help_text='Район точки', null=True, blank=True)
@@ -74,7 +108,7 @@ class Point(models.Model):
     moods = models.ManyToManyField(Mood,blank=True)
     coordinates_lat = models.DecimalField(max_digits=9, decimal_places=6, help_text='Широта')
     coordinates_lng = models.DecimalField(max_digits=9, decimal_places=6, help_text='Долгота')
-    address=models.CharField(max_length=50, null=True, blank=True)
+    address=models.CharField(max_length=300, null=True, blank=True)
     average_visit_duration = models.IntegerField(help_text='Среднее время посещения в минутах')
     average_cost = models.IntegerField(null=True, blank=True, help_text='Средняя стоимость посещения')
     is_partner = models.BooleanField(default=False, help_text='Является ли точка партнерской')
