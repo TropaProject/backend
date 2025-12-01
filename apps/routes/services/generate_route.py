@@ -1,0 +1,235 @@
+import json
+from collections import defaultdict
+import numpy as np
+import math
+from typing import Dict, Any, List
+from openai import OpenAI
+from django.conf import settings
+
+from apps.routes.models import Point, PointEmbedding
+
+client = OpenAI(api_key=settings.OPENAI_API_KEY,
+                base_url="https://api.proxyapi.ru/openai/v1")
+
+
+class RoutePipeline:
+    def __init__(self, req_payload: Dict[str, Any], gpt_text: str, a: float = 0.7, b: float = 0.3):
+        """
+        Инициализация пайплайна.
+        req_payload — запрос пользователя (JSON).
+        gpt_text — заранее полученный текст от GPT (описание маршрута).
+        a, b — веса для комбинирования эмбеддингов GPT и структурных данных.
+        """
+        self.req_payload = req_payload
+        self.gpt_text = gpt_text
+        self.a = a
+        self.b = b
+        self.E_gpt = None
+        self.E_struct = None
+        self.E_final = None
+        self.filtered_points = None
+        self.final_points = None
+
+    # --- Шаг 1: эмбеддинг текста GPT ---
+    def embed_gpt_text(self):
+        """
+        Считаем эмбеддинг текста, заранее полученного от GPT.
+        """
+        self.E_gpt = np.array(
+            client.embeddings.create(model="text-embedding-3-small", input=self.gpt_text).data[0].embedding
+        )
+        return self.E_gpt
+
+    # --- Шаг 2: эмбеддинг структурных данных ---
+    def embed_struct_data(self):
+        """
+        Формируем краткий текст из полей запроса и считаем его эмбеддинг.
+        """
+        struct_text = (
+            f"{self.req_payload.get('city_id')}, {self.req_payload.get('time_of_day')}, "
+            f"интересы: {', '.join(self.req_payload.get('interests', []))}, "
+            f"настроение: {', '.join(self.req_payload.get('mood', []))}, "
+            f"бюджет: {self.req_payload.get('budget')}, "
+            f"транспорт: {self.req_payload.get('transport')}, "
+            f"{self.req_payload.get('duration_minutes')} минут, "
+            f"район: {self.req_payload.get('start_area')}, "
+            f"старт: {self.req_payload.get('start_point')}"
+        )
+        self.E_struct = np.array(
+            client.embeddings.create(model="text-embedding-3-small", input=struct_text).data[0].embedding
+        )
+        return self.E_struct
+
+    # --- Шаг 3: комбинирование эмбеддингов ---
+    def combine_embeddings(self):
+        """
+        Комбинируем эмбеддинг GPT-текста и структурных данных.
+        """
+        if self.E_gpt is None:
+            self.embed_gpt_text()
+        if self.E_struct is None:
+            self.embed_struct_data()
+        self.E_final = self.a * self.E_gpt + self.b * self.E_struct
+        self.E_final = self.E_final / (np.linalg.norm(self.E_final) + 1e-9)
+        return self.E_final.tolist()
+
+    # --- Шаг 4: фильтр по старту ---
+    def filter_by_start_point(self, pois: List[Dict[str, Any]], radius_km: float = 2.0):
+        """
+        Фильтруем точки по радиусу от стартовой точки (по умолчанию 2 км).
+        """
+        lat0, lon0 = map(float, self.req_payload.get("start_point").split(","))
+
+        def haversine(lat1, lon1, lat2, lon2):
+            R = 6371.0
+            dlat = math.radians(lat2 - lat1)
+            dlon = math.radians(lon2 - lon1)
+            a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(
+                dlon / 2) ** 2
+            return 2 * R * math.asin(min(1, math.sqrt(a)))
+
+        self.filtered_points = [
+            p for p in pois if
+            haversine(lat0, lon0, float(p['coordinates_lat']), float(p['coordinates_lng'])) <= radius_km
+        ]
+        return self.filtered_points
+
+    # --- Шаг 5: поиск по эмбеддингам ---
+    def search_by_embeddings(self, pois: List[Dict[str, Any]], top_n: int = 50) -> List[Dict[str, Any]]:
+        """
+        Считаем косинусное сходство между E_final и эмбеддингами точек.
+        Берём top_n ближайших.
+        """
+
+        def cosine_similarity(vec1, vec2):
+            v1 = np.array(vec1)
+            v2 = np.array(vec2)
+            return float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-9))
+
+        results = []
+        for p in pois:
+            sim = cosine_similarity(self.E_final, p['embedding'])
+            results.append({**p, "similarity": sim})
+
+        results.sort(key=lambda x: x["similarity"], reverse=True)
+        return results[:top_n]
+
+    # --- Шаг 6: стохастический отбор ---
+    def stochastic_selection(self, pois: List[Dict[str, Any]], k: int = 30) -> List[Dict[str, Any]]:
+        """
+        Из top-N выбираем k точек случайным образом, но с весами по similarity.
+        """
+        sims = np.array([p["similarity"] for p in pois])
+        weights = sims / sims.sum()
+        chosen_idx = np.random.choice(len(pois), size=min(k, len(pois)), replace=False, p=weights)
+        chosen = [pois[i] for i in chosen_idx]
+        chosen_sorted = sorted(chosen, key=lambda p: p["similarity"], reverse=True)
+        return chosen_sorted
+
+    # --- Шаг 7: финальный выбор точек GPT ---
+    def final_selection_gpt(self, candidate_points: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Отправляем список 30 точек в GPT с инструкцией:
+        «Выбери 5–7 точек для маршрута, учитывая интересы, настроение, бюджет и логистику».
+        GPT должен вернуть строго JSON-словарь с выбранными точками в порядке движения.
+        """
+
+        points_text = "\n".join([
+            f"- id: {p['id']}, name: {p['name']}, desc: {p['description']}, "
+            f"coords: [{p['coordinates_lat']}, {p['coordinates_lng']}]"
+            for p in candidate_points
+        ])
+        prompt = (
+            f"Исходный запрос пользователя:\n{self.req_payload}\n\n"
+            f"Описание маршрута от GPT:\n{self.gpt_text}\n\n"
+            f"Список доступных точек (30):\n{points_text}\n\n"
+            f"Задача: выбери 5–7 точек для маршрута, учитывая интересы, настроение, бюджет и логистику.\n"
+            f"Важные требования:\n"
+            f"- Верни строго JSON-словарь.\n"
+            f"- Формат: {{\"points\": [{{\"id\": \"...\", \"order\": 1, \"reason\": \"...\"}}, ...]}}.\n"
+            f"- Используй только id из списка.\n"
+            f"- Список точек отсортирован по приоритету (начало списка важнее).\n"
+            f"- Выбирай преимущественно из первых точек, но допускается брать более дальние, если они лучше подходят для маршрута.\n"
+            f"- Расположи точки в порядке движения по координатам (от стартовой точки).\n"
+            f"- Не добавляй лишнего текста, только JSON.\n"
+            f"- Верни только JSON без форматирования, без ```json и других обёрток."
+        )
+
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        result_text = response.choices[0].message.content.strip()
+        # Попробуем распарсить JSON
+        try:
+            result_json = json.loads(result_text)
+        except Exception:
+            result_json = {"points": []}
+
+        self.final_points = result_json
+        return result_json
+
+    # --- Адаптер для моделей Django ---
+    @staticmethod
+    def adapt_points(points: List[Point]) -> List[Dict[str, Any]]:
+        """
+        Превращаем список объектов Point + PointEmbedding в словари,
+        удобные для работы пайплайна.
+        """
+        adapted = []
+        embeddings = PointEmbedding.objects.filter(point__in=points).select_related("point")
+        for pe in embeddings:
+            adapted.append({
+                "id": pe.point.id,
+                "name": pe.point.name,
+                "description": pe.point.description,
+                "coordinates_lat": float(pe.point.coordinates_lat),
+                "coordinates_lng": float(pe.point.coordinates_lng),
+                "embedding": pe.embedding,
+            })
+        return adapted
+
+    def run_pipeline(self, pois: List[Point]) -> Dict[str, Any]:
+        """
+        Запускаем весь пайплайн:
+        1. Комбинирование эмбеддингов
+        2. Фильтр по радиусу
+        3. Поиск по эмбеддингам (top-50)
+        4. Стохастический отбор (30 точек)
+        5. Финальный выбор GPT (5–7 точек)
+        """
+        # шаг 1: итоговый эмбеддинг
+        self.combine_embeddings()
+
+        # шаг 2: адаптируем точки из БД в словари
+        pois_dicts = self.adapt_points(pois)
+        print(f"[LOG] Всего точек в городе: {len(pois_dicts)}")
+
+        # шаг 3: фильтр по радиусу
+        filtered = self.filter_by_start_point(pois_dicts, radius_km=2.0)
+        print(f"[LOG] После фильтра по радиусу осталось: {len(filtered)} точек")
+
+        # шаг 4: поиск по эмбеддингам
+        top50 = self.search_by_embeddings(filtered, top_n=50)
+        print(f"[LOG] Топ-50 точек по сходству выбрано")
+
+        # шаг 5: стохастический отбор
+        selected30 = self.stochastic_selection(top50, k=30)
+        print(f"[LOG] Стохастически выбрано: {len(selected30)} точек")
+        # шаг 6: финальный выбор GPT
+        final_result = self.final_selection_gpt(selected30)
+        print(f"[LOG] Финальный маршрут сформирован")
+
+        return final_result
+
+
+def build_map_url(points):
+    """
+    Генерируем простой URL для карты (пример для Яндекс.Карт).
+    Можно заменить на свой генератор маршрутов.
+    """
+    if not points:
+        return None
+    coords = "~".join([f"{p['coordinates']['lat']},{p['coordinates']['lng']}" for p in points])
+    return f"https://yandex.ru/maps/?pt={coords}"

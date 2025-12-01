@@ -95,3 +95,6 @@ def map_view(request):
             "coordinates_lng": float(p["coordinates_lng"]),
         })
     return render(request, "map.html", {"points_json": json.dumps(points_list)})
+
+
+

@@ -9,5 +9,6 @@ urlpatterns = [
     path("edit-status/", EditRouteStatusView.as_view(), name="edit-route-status"),
     path("cancel/", CancelRouteView.as_view(), name="cancel-route"),
     path("show/<str:id_route>/", RouteDetailView.as_view(), name="route-detail"),
-
+    path("gen-description/", GenerateDescriptionView.as_view(), name="generate-description"),
+    path("pipeline/", pipeline_view, name="pipeline"),
 ]

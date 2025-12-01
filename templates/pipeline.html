@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Генерация маршрута</title>
+</head>
+<body>
+  <h1>Форма генерации маршрута</h1>
+
+  <form method="post">
+    {% csrf_token %}
+    <label>Город: <input type="text" name="city_id" value="{{ city_id }}"></label><br>
+    <label>Время суток: <input type="text" name="time_of_day" value="{{ time_of_day }}"></label><br>
+    <label>Интересы: <input type="text" name="interests" value="{{ interests }}"></label><br>
+    <label>Настроение: <input type="text" name="mood" value="{{ mood }}"></label><br>
+    <label>Бюджет: <input type="text" name="budget" value="{{ budget }}"></label><br>
+    <label>Транспорт: <input type="text" name="transport" value="{{ transport }}"></label><br>
+    <label>Длительность: <input type="text" name="duration_minutes" value="{{ duration_minutes }}"></label><br>
+    <label>Описание: <textarea name="description">{{ description }}</textarea></label><br>
+    <label>Стартовая точка: <input type="text" name="start_point" value="{{ start_point }}"></label><br>
+    <label>Район: <input type="text" name="start_area" value="{{ start_area }}"></label><br>
+    <label>GPT описание: <textarea name="gpt_description">{{ gpt_description }}</textarea></label><br>
+
+    <button type="submit">Запустить</button>
+  </form>
+
+  {% if result %}
+    <h2>Результаты пайплайна</h2>
+    <pre>{{ result|safe }}</pre>
+  {% endif %}
+</body>
+</html>
