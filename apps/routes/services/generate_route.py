@@ -8,12 +8,25 @@ from django.conf import settings
 
 from apps.routes.models import Point, PointEmbedding
 
+def haversine(lat1, lon1, lat2, lon2):
+    """
+    Возвращает расстояние в метрах между двумя координатами по формуле Хаверсина.
+    """
+    R = 6371000  # радиус Земли в метрах
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
 client = OpenAI(api_key=settings.OPENAI_API_KEY,
                 base_url="https://api.proxyapi.ru/openai/v1")
 
 
 class RoutePipeline:
-    def __init__(self, req_payload: Dict[str, Any], gpt_text: str, a: float = 0.7, b: float = 0.3):
+    def __init__(self, req_payload: Dict[str, Any], gpt_text: str, a: float = 0.7, b: float = 0.3,
+                 radius_km: float = 2.0):
         """
         Инициализация пайплайна.
         req_payload — запрос пользователя (JSON).
@@ -29,6 +42,7 @@ class RoutePipeline:
         self.E_final = None
         self.filtered_points = None
         self.final_points = None
+        self.radius_km = radius_km
 
     # --- Шаг 1: эмбеддинг текста GPT ---
     def embed_gpt_text(self):
@@ -74,7 +88,7 @@ class RoutePipeline:
         return self.E_final.tolist()
 
     # --- Шаг 4: фильтр по старту ---
-    def filter_by_start_point(self, pois: List[Dict[str, Any]], radius_km: float = 2.0):
+    def filter_by_start_point(self, pois: List[Dict[str, Any]], radius_km: float = 1.5):
         """
         Фильтруем точки по радиусу от стартовой точки (по умолчанию 2 км).
         """
@@ -143,7 +157,7 @@ class RoutePipeline:
             f"Исходный запрос пользователя:\n{self.req_payload}\n\n"
             f"Описание маршрута от GPT:\n{self.gpt_text}\n\n"
             f"Список доступных точек (30):\n{points_text}\n\n"
-            f"Задача: выбери 5–7 точек для маршрута, учитывая интересы, настроение, бюджет и логистику.\n"
+            f"Задача: выбери 7-10 точек для маршрута, учитывая интересы, настроение, бюджет и логистику.\n"
             f"Важные требования:\n"
             f"- Верни строго JSON-словарь.\n"
             f"- Формат: {{\"points\": [{{\"id\": \"...\", \"order\": 1, \"reason\": \"...\"}}, ...]}}.\n"
@@ -151,6 +165,8 @@ class RoutePipeline:
             f"- Список точек отсортирован по приоритету (начало списка важнее).\n"
             f"- Выбирай преимущественно из первых точек, но допускается брать более дальние, если они лучше подходят для маршрута.\n"
             f"- Расположи точки в порядке движения по координатам (от стартовой точки).\n"
+            f"- Избегай точек, которые находятся на противоположных концах радиуса,\n"
+            f"- Формируй логичный маршрут а не разбросанные места\n"
             f"- Не добавляй лишнего текста, только JSON.\n"
             f"- Верни только JSON без форматирования, без ```json и других обёрток."
         )
@@ -167,6 +183,83 @@ class RoutePipeline:
         except Exception:
             result_json = {"points": []}
 
+        # --- Жадный алгоритм ближайшего соседа ---
+        if result_json.get("points"):
+            # словарь для быстрого доступа к координатам
+            point_map = {str(p["id"]): p for p in candidate_points}
+
+            # стартовая точка
+            lat0, lon0 = map(float, self.req_payload.get("start_point").split(","))
+            ordered = []
+            remaining = result_json["points"]
+
+            current_lat, current_lon = lat0, lon0
+            order = 1
+
+            while remaining:
+                # ищем ближайшую точку
+                next_point = min(
+                    remaining,
+                    key=lambda p: haversine(
+                        current_lat, current_lon,
+                        float(point_map[p["id"]]["coordinates_lat"]),
+                        float(point_map[p["id"]]["coordinates_lng"])
+                    )
+                )
+                # добавляем в маршрут
+                next_point["order"] = order
+                ordered.append(next_point)
+                order += 1
+
+                # обновляем текущие координаты
+                current_lat = float(point_map[next_point["id"]]["coordinates_lat"])
+                current_lon = float(point_map[next_point["id"]]["coordinates_lng"])
+
+                # убираем точку из списка
+                remaining.remove(next_point)
+
+            result_json["points"] = ordered
+            # --- Расчёт времени маршрута ---
+            user_time_limit = int(self.req_payload.get("duration_minutes", 180))  # время от пользователя
+            max_time = user_time_limit * 1.4  # +20% буфер
+            walk_speed_m_per_min = 70  # средняя скорость ходьбы
+
+            total_time = 0.0
+            walk_time = 0.0
+            visit_time = 0.0
+            total_distance = 0.0
+
+            final_points = []
+            prev_lat, prev_lon = lat0, lon0
+
+            for p in ordered:
+                # координаты точки
+                lat = float(point_map[p["id"]]["coordinates_lat"])
+                lon = float(point_map[p["id"]]["coordinates_lng"])
+
+                # расстояние и время ходьбы до этой точки
+                dist = haversine(prev_lat, prev_lon, lat, lon)
+                walk_time_inc = dist / walk_speed_m_per_min
+
+                # время посещения из модели
+                visit_time_inc = int(point_map[p["id"]].get("average_visit_duration", 30))
+
+                # проверка лимита
+                if (total_time + walk_time_inc + visit_time_inc) <= max_time:
+                    total_time += walk_time_inc + visit_time_inc
+                    walk_time += walk_time_inc
+                    visit_time += visit_time_inc
+                    total_distance += dist
+
+                    final_points.append(p)
+                    prev_lat, prev_lon = lat, lon
+                else:
+                    break  # дальше уже не влезаем по времени
+
+            result_json["points"] = final_points
+            result_json["total_time"] = int(round(total_time))
+            result_json["walk_time_minutes"] = int(round(walk_time))
+            result_json["visit_time_minutes"] = int(round(visit_time))
         self.final_points = result_json
         return result_json
 

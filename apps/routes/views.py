@@ -85,6 +85,7 @@ class GenerateRouteView(APIView):
         start_point=data.get("start_point")
         start_area=data.get("start_area")
         gpt_description=data.get("gpt_description")
+        radius_km=data.get("radius_km")
         if not city_id or not duration_minutes:
             return Response(
                 {"status": "error", "message": "city_id и duration_minutes обязательны"},
@@ -110,7 +111,7 @@ class GenerateRouteView(APIView):
                 "start_point": start_point,
                 "start_area": start_area,
             }
-            pipeline = RoutePipeline(req_payload=req_payload, gpt_text=gpt_description)
+            pipeline = RoutePipeline(req_payload=req_payload, gpt_text=gpt_description,radius_km=float(radius_km))
             final_result = pipeline.run_pipeline(pois_qs)
             # Ожидается: {"points": [{"id": "...", "order": 1, "reason": "..."} ...]}
             selected = final_result.get("points", [])
@@ -130,7 +131,7 @@ class GenerateRouteView(APIView):
             ]
             # Вызываем сервисные функции
             total_cost = calculate_total_cost(ordered_points)
-            total_duration = calculate_total_duration(ordered_points)  # можно передать api_key при необходимости
+            total_duration = final_result.get("total_time", 0)  # можно передать api_key при необходимости
             total_meters = calculate_total_meters(ordered_points)
             route = Route.objects.create(
                 total_duration=total_duration,
@@ -173,6 +174,11 @@ class GenerateRouteView(APIView):
             # 5) Формируем ответ
             response_data = {
                     "route_id": str(route.id),
+                    "total_duration":route.total_duration,
+                    "total_meters":route.total_meters,
+                    "total_cost":route.total_cost,
+                    "walk_time":final_result.get("walk_time_minutes", 0),
+                    "visit_time":final_result.get("visit_time_minutes", 0),
                     "user_id": request.user.id,
                     "map_url": 'ffd',
                     "points": enriched_points,
