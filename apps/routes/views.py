@@ -10,7 +10,7 @@ from rest_framework import status, permissions
 
 from .models import City, Interest, Mood, CityArea, Route, Feedback, Point
 from .serializers import CitySerializer, InterestSerializer, MoodSerializer
-from .services.generate_route import RoutePipeline, build_map_url
+from .services.generate_route import RoutePipeline, build_map_url, build_yandex_map_url
 from .services.route_metrics import calculate_total_cost, calculate_total_duration, calculate_total_meters
 
 
@@ -172,6 +172,7 @@ class GenerateRouteView(APIView):
                 })
             print("Step 4 complete")
             # 5) Формируем ответ
+            map_url = build_yandex_map_url([ep["coordinates"] for ep in enriched_points])
             response_data = {
                     "route_id": str(route.id),
                     "total_duration":route.total_duration,
@@ -180,10 +181,9 @@ class GenerateRouteView(APIView):
                     "walk_time":final_result.get("walk_time_minutes", 0),
                     "visit_time":final_result.get("visit_time_minutes", 0),
                     "user_id": request.user.id,
-                    "map_url": 'ffd',
+                    "map_url": map_url,
                     "points": enriched_points,
                 }
-            print(response_data)
             return Response({"status": "success", "data": response_data}, status=status.HTTP_200_OK)
         except City.DoesNotExist:
             return Response(

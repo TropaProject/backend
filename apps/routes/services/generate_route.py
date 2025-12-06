@@ -8,6 +8,18 @@ from django.conf import settings
 
 from apps.routes.models import Point, PointEmbedding
 
+
+def build_yandex_map_url(points):
+    """
+    Формирует ссылку на маршрут в Яндекс.Картах (режим пешком).
+    points: список словарей [{"lat": 55.751244, "lng": 37.618423}, ...]
+    """
+    if not points:
+        return None
+    coords_str = "~".join([f"{p['lat']},{p['lng']}" for p in points])
+    return f"https://yandex.ru/maps/?rtext={coords_str}&rtt=walk"
+
+
 def haversine(lat1, lon1, lat2, lon2):
     """
     Возвращает расстояние в метрах между двумя координатами по формуле Хаверсина.
@@ -17,8 +29,9 @@ def haversine(lat1, lon1, lat2, lon2):
     dphi = math.radians(lat2 - lat1)
     dlambda = math.radians(lon2 - lon1)
 
-    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
     return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY,
                 base_url="https://api.proxyapi.ru/openai/v1")
@@ -88,24 +101,35 @@ class RoutePipeline:
         return self.E_final.tolist()
 
     # --- Шаг 4: фильтр по старту ---
-    def filter_by_start_point(self, pois: List[Dict[str, Any]], radius_km: float = 1.5):
+    def filter_by_start_point(self, pois: List[Dict[str, Any]], radius_km: float) -> List[Dict[str, Any]]:
         """
-        Фильтруем точки по радиусу от стартовой точки (по умолчанию 2 км).
+        Фильтруем точки по радиусу от стартовой точки.
+        radius_km: радиус в километрах (например, 0.5, 1, 3).
+        Возвращает список точек в пределах указанного радиуса.
         """
+        # стартовая точка пользователя
         lat0, lon0 = map(float, self.req_payload.get("start_point").split(","))
 
-        def haversine(lat1, lon1, lat2, lon2):
-            R = 6371.0
+        def haversine_filter(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+            """
+            Возвращает расстояние между двумя координатами в километрах.
+            """
+            R = 6371.0  # радиус Земли в км
             dlat = math.radians(lat2 - lat1)
             dlon = math.radians(lon2 - lon1)
-            a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(
-                dlon / 2) ** 2
-            return 2 * R * math.asin(min(1, math.sqrt(a)))
+            phi1 = math.radians(lat1)
+            phi2 = math.radians(lat2)
 
+            a = math.sin(dlat / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlon / 2) ** 2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            return R * c  # расстояние в км
+
+        # фильтрация точек
         self.filtered_points = [
-            p for p in pois if
-            haversine(lat0, lon0, float(p['coordinates_lat']), float(p['coordinates_lng'])) <= radius_km
+            p for p in pois
+            if haversine_filter(lat0, lon0, float(p['coordinates_lat']), float(p['coordinates_lng'])) <= radius_km
         ]
+
         return self.filtered_points
 
     # --- Шаг 5: поиск по эмбеддингам ---
@@ -283,6 +307,28 @@ class RoutePipeline:
             })
         return adapted
 
+    def compute_top_n(self, filtered_count: int, radius_km: float) -> int:
+        """
+        Адаптивный выбор количества точек для семантического отбора.
+        """
+        if filtered_count < 20:
+            return filtered_count
+
+        # коэффициент охвата по радиусу
+        if radius_km <= 1:
+            coverage = 1.0
+        elif radius_km <= 2:
+            coverage = 0.4
+        else:
+            coverage = 0.3
+
+        min_floor = 20  # минимум точек для семантики
+        max_cap = 70  # максимум точек для семантики
+
+        top_n = int(round(filtered_count * coverage))
+        top_n = max(min_floor, top_n)
+        top_n = min(max_cap, top_n, filtered_count)
+        return top_n
     def run_pipeline(self, pois: List[Point]) -> Dict[str, Any]:
         """
         Запускаем весь пайплайн:
@@ -293,6 +339,7 @@ class RoutePipeline:
         5. Финальный выбор GPT (5–7 точек)
         """
         # шаг 1: итоговый эмбеддинг
+        # шаг 1: итоговый эмбеддинг
         self.combine_embeddings()
 
         # шаг 2: адаптируем точки из БД в словари
@@ -300,18 +347,24 @@ class RoutePipeline:
         print(f"[LOG] Всего точек в городе: {len(pois_dicts)}")
 
         # шаг 3: фильтр по радиусу
-        filtered = self.filter_by_start_point(pois_dicts, radius_km=2.0)
+        filtered = self.filter_by_start_point(pois_dicts, radius_km=self.radius_km)
         print(f"[LOG] После фильтра по радиусу осталось: {len(filtered)} точек")
 
         # шаг 4: поиск по эмбеддингам
-        top50 = self.search_by_embeddings(filtered, top_n=50)
-        print(f"[LOG] Топ-50 точек по сходству выбрано")
+        top_n = self.compute_top_n(len(filtered), self.radius_km)
+        top_points = self.search_by_embeddings(filtered, top_n=top_n)
+        print(f"[LOG] Топ-{top_n} точек по сходству выбрано")
 
-        # шаг 5: стохастический отбор
-        selected30 = self.stochastic_selection(top50, k=30)
-        print(f"[LOG] Стохастически выбрано: {len(selected30)} точек")
+        # шаг 5: стохастический отбор (условный)
+        if top_n > 40:
+            selected = self.stochastic_selection(top_points, k=min(35, top_n))
+            print(f"[LOG] Стохастически выбрано: {len(selected)} точек")
+        else:
+            selected = top_points
+            print(f"[LOG] Стохастика пропущена, выбраны все {len(selected)} точек")
+
         # шаг 6: финальный выбор GPT
-        final_result = self.final_selection_gpt(selected30)
+        final_result = self.final_selection_gpt(selected)
         print(f"[LOG] Финальный маршрут сформирован")
 
         return final_result
