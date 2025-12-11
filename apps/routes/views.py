@@ -75,24 +75,30 @@ class GenerateRouteView(APIView):
         data = request.data
 
         city_id = data.get("city_id")
-        time_of_day = data.get("time_of_day")
-        interests = data.get("interests", [])
-        mood = data.get("mood", [])
-        budget = data.get("budget")
-        transport = data.get("transport")
         duration_minutes = data.get("duration_minutes")
-        description = data.get("description")
-        start_point=data.get("start_point")
-        start_area=data.get("start_area")
-        gpt_description=data.get("gpt_description")
-        radius_km=data.get("radius_km")
+        radius_km = data.get("radius_km")
+
+        # базовая валидация
         if not city_id or not duration_minutes:
             return Response(
                 {"status": "error", "message": "city_id и duration_minutes обязательны"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        try:
+            duration_minutes = int(duration_minutes)
+        except Exception:
+            return Response(
+                {"status": "error", "message": "duration_minutes должен быть числом"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            radius_km = float(radius_km) if radius_km else 2.0
+        except Exception:
+            return Response(
+                {"status": "error", "message": "radius_km должен быть числом"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # Вызов ML
         try:
             # 1) Получаем город и точки
             city = City.objects.get(id=city_id)
@@ -101,90 +107,110 @@ class GenerateRouteView(APIView):
             # 2) Запускаем пайплайн
             req_payload = {
                 "city_id": city_id,
-                "time_of_day": time_of_day,
-                "interests": interests,
-                "mood": mood,
-                "budget": budget,
-                "transport": transport,
-                "duration_minutes": int(duration_minutes),
-                "description": description,
-                "start_point": start_point,
-                "start_area": start_area,
+                "time_of_day": data.get("time_of_day"),
+                "interests": data.get("interests", []),
+                "mood": data.get("mood", []),
+                "budget": data.get("budget"),
+                "transport": data.get("transport"),
+                "duration_minutes": duration_minutes,
+                "description": data.get("description"),
+                "start_point": data.get("start_point"),
+                "start_area": data.get("start_area"),
             }
-            pipeline = RoutePipeline(req_payload=req_payload, gpt_text=gpt_description,radius_km=float(radius_km))
-            final_result = pipeline.run_pipeline(pois_qs)
-            # Ожидается: {"points": [{"id": "...", "order": 1, "reason": "..."} ...]}
+            pipeline = RoutePipeline(req_payload=req_payload,
+                                     gpt_text=data.get("gpt_description"),
+                                     radius_km=radius_km)
+            try:
+                final_result = pipeline.run_pipeline(pois_qs)
+            except Exception as e:
+                return Response(
+                    {"status": "error", "message": "Ошибка пайплайна", "details": str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
             selected = final_result.get("points", [])
             if not selected:
                 return Response(
                     {"status": "error", "message": "GPT вернул пустой список точек"},
                     status=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 )
-            print("Step 2 complete")
-            # 3) Создаём маршрут в БД
 
-            point_map = {str(p.id): p for p in Point.objects.filter(id__in=[s["id"] for s in selected])}
-            ordered_points = [
-                point_map[str(item["id"])]
-                for item in sorted(selected, key=lambda x: x.get("order", 9999))
-                if str(item["id"]) in point_map
-            ]
-            # Вызываем сервисные функции
-            total_cost = calculate_total_cost(ordered_points)
-            total_duration = final_result.get("total_time", 0)  # можно передать api_key при необходимости
-            total_meters = calculate_total_meters(ordered_points)
-            route = Route.objects.create(
-                total_duration=total_duration,
-                total_cost=total_cost,
-                total_meters=total_meters,
-                city=city,
-                description=gpt_description or description or "",
-                user=request.user,
-                point_sequence=[p.id for p in ordered_points],
-                status=Route.WalkStatus.GOING,
-            )
+            # 3) Создаём маршрут
+            try:
+                point_map = {str(p.id): p for p in Point.objects.filter(id__in=[s["id"] for s in selected])}
+                ordered_points = [
+                    point_map[str(item["id"])]
+                    for item in sorted(selected, key=lambda x: x.get("order", 9999))
+                    if str(item["id"]) in point_map
+                ]
+            except Exception as e:
+                return Response(
+                    {"status": "error", "message": "Ошибка при обработке точек", "details": str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
-            # ManyToMany связывание
+            try:
+                total_cost = calculate_total_cost(ordered_points)
+                total_duration = final_result.get("total_time", 0)
+                total_meters = calculate_total_meters(ordered_points)
+                route = Route.objects.create(
+                    total_duration=total_duration,
+                    total_cost=total_cost,
+                    total_meters=total_meters,
+                    city=city,
+                    description=data.get("gpt_description") or data.get("description") or "",
+                    user=request.user,
+                    point_sequence=[p.id for p in ordered_points],
+                    status=Route.WalkStatus.GOING,
+                )
+                for item in selected:
+                    p = point_map.get(str(item["id"]))
+                    if p:
+                        route.points.add(p)
+            except Exception as e:
+                return Response(
+                    {"status": "error", "message": "Ошибка при создании маршрута", "details": str(e)},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
-            for item in selected:
-                p = point_map.get(str(item["id"]))
-                if p:
-                    route.points.add(p)
-            print("Step 3 complete")
-            # 4) Обогащаем точки для ответа
+            # 4) Обогащаем точки
             enriched_points = []
             for item in sorted(selected, key=lambda x: x.get("order", 9999)):
                 p = point_map.get(str(item["id"]))
                 if not p:
                     continue
-                enriched_points.append({
-                    "id": str(p.id),
-                    "name": p.name,
-                    "description": p.description,
-                    "reason": item.get("reason", ""),
-                    "image_url": getattr(p, "image_url", None),
-                    "visit_time": getattr(p, "visit_time", None) or "30 мин",
-                    "tags": [t.name for t in p.tags.all()] if hasattr(p, "tags") else [],
-                    "coordinates": {
-                         "lat": float(p.coordinates_lat),
-                         "lng": float(p.coordinates_lng),
-                    },
-                })
-            print("Step 4 complete")
-            # 5) Формируем ответ
+                try:
+                    enriched_points.append({
+                        "id": str(p.id),
+                        "name": p.name,
+                        "description": p.description,
+                        "reason": item.get("reason", ""),
+                        "image_url": getattr(p, "image_url", None),
+                        "visit_time": getattr(p, "visit_time", None) or "30 мин",
+                        "tags": [t.name for t in p.tags.all()] if hasattr(p, "tags") else [],
+                        "coordinates": {
+                             "lat": float(p.coordinates_lat),
+                             "lng": float(p.coordinates_lng),
+                        },
+                    })
+                except Exception as e:
+                    print(f"[WARN] enrich point failed: {e}")
+
+            # 5) Ответ
             map_url = build_yandex_map_url([ep["coordinates"] for ep in enriched_points])
             response_data = {
-                    "route_id": str(route.id),
-                    "total_duration":route.total_duration,
-                    "total_meters":route.total_meters,
-                    "total_cost":route.total_cost,
-                    "walk_time":final_result.get("walk_time_minutes", 0),
-                    "visit_time":final_result.get("visit_time_minutes", 0),
-                    "user_id": request.user.id,
-                    "map_url": map_url,
-                    "points": enriched_points,
-                }
+                "route_id": str(route.id),
+                "total_duration": route.total_duration,
+                "total_meters": route.total_meters,
+                "total_cost": route.total_cost,
+                "walk_time": final_result.get("walk_time_minutes", 0),
+                "visit_time": final_result.get("visit_time_minutes", 0),
+                "user_id": request.user.id,
+                "map_url": map_url,
+                "points": enriched_points,
+            }
             return Response({"status": "success", "data": response_data}, status=status.HTTP_200_OK)
+
         except City.DoesNotExist:
             return Response(
                 {"status": "error", "message": "Город не найден"},
@@ -192,9 +218,10 @@ class GenerateRouteView(APIView):
             )
         except Exception as e:
             return Response(
-                {"status": "error", "message": str(e)},
+                {"status": "error", "message": "Непредвиденная ошибка", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
 
 
 class EditRouteStatusView(APIView):

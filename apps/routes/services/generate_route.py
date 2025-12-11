@@ -1,4 +1,5 @@
 import json
+import re
 from collections import defaultdict
 import numpy as np
 import math
@@ -24,13 +25,23 @@ def haversine(lat1, lon1, lat2, lon2):
     """
     Возвращает расстояние в метрах между двумя координатами по формуле Хаверсина.
     """
-    R = 6371000  # радиус Земли в метрах
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
+    try:
+        # Приведение к float
+        lat1, lon1, lat2, lon2 = float(lat1), float(lon1), float(lat2), float(lon2)
 
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        R = 6371000.0  # радиус Земли в метрах
+        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlambda = math.radians(lon2 - lon1)
+
+        a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+        # защита от округления
+        a = min(1.0, max(0.0, a))
+
+        return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    except Exception as e:
+        print(f"[WARN] haversine failed: {e}")
+        return float("inf")  # безопасный fallback
 
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY,
@@ -62,9 +73,23 @@ class RoutePipeline:
         """
         Считаем эмбеддинг текста, заранее полученного от GPT.
         """
-        self.E_gpt = np.array(
-            client.embeddings.create(model="text-embedding-3-small", input=self.gpt_text).data[0].embedding
-        )
+        text = self.gpt_text or ""
+        try:
+            response = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=text
+            )
+            data = response.data if hasattr(response, "data") else []
+            if data and hasattr(data[0], "embedding"):
+                emb = np.array(data[0].embedding, dtype=float)
+            else:
+                print("[WARN] GPT embedding response empty or malformed.")
+                emb = np.zeros(1536, dtype=float)  # размер зависит от модели
+        except Exception as e:
+            print(f"[WARN] GPT embedding failed: {e}")
+            emb = np.zeros(1536, dtype=float)
+
+        self.E_gpt = emb
         return self.E_gpt
 
     # --- Шаг 2: эмбеддинг структурных данных ---
@@ -72,19 +97,40 @@ class RoutePipeline:
         """
         Формируем краткий текст из полей запроса и считаем его эмбеддинг.
         """
-        struct_text = (
-            f"{self.req_payload.get('city_id')}, {self.req_payload.get('time_of_day')}, "
-            f"интересы: {', '.join(self.req_payload.get('interests', []))}, "
-            f"настроение: {', '.join(self.req_payload.get('mood', []))}, "
-            f"бюджет: {self.req_payload.get('budget')}, "
-            f"транспорт: {self.req_payload.get('transport')}, "
-            f"{self.req_payload.get('duration_minutes')} минут, "
-            f"район: {self.req_payload.get('start_area')}, "
-            f"старт: {self.req_payload.get('start_point')}"
-        )
-        self.E_struct = np.array(
-            client.embeddings.create(model="text-embedding-3-small", input=struct_text).data[0].embedding
-        )
+        try:
+            interests = self.req_payload.get('interests') or []
+            if not isinstance(interests, list):
+                interests = [str(interests)]
+            mood = self.req_payload.get('mood') or []
+            if not isinstance(mood, list):
+                mood = [str(mood)]
+
+            struct_text = (
+                f"{self.req_payload.get('city_id', '')}, {self.req_payload.get('time_of_day', '')}, "
+                f"интересы: {', '.join(map(str, interests))}, "
+                f"настроение: {', '.join(map(str, mood))}, "
+                f"бюджет: {str(self.req_payload.get('budget', ''))}, "
+                f"транспорт: {str(self.req_payload.get('transport', ''))}, "
+                f"{str(self.req_payload.get('duration_minutes', ''))} минут, "
+                f"район: {str(self.req_payload.get('start_area', ''))}, "
+                f"старт: {str(self.req_payload.get('start_point', ''))}"
+            )
+
+            response = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=struct_text or "empty"
+            )
+            data = getattr(response, "data", [])
+            if data and hasattr(data[0], "embedding"):
+                emb = np.array(data[0].embedding, dtype=float)
+            else:
+                print("[WARN] Struct embedding response empty or malformed.")
+                emb = np.zeros(1536, dtype=float)  # размер зависит от модели
+        except Exception as e:
+            print(f"[WARN] Struct embedding failed: {e}")
+            emb = np.zeros(1536, dtype=float)
+
+        self.E_struct = emb
         return self.E_struct
 
     # --- Шаг 3: комбинирование эмбеддингов ---
@@ -139,18 +185,33 @@ class RoutePipeline:
         Берём top_n ближайших.
         """
 
-        def cosine_similarity(vec1, vec2):
-            v1 = np.array(vec1)
-            v2 = np.array(vec2)
-            return float(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-9))
+        def safe_cosine_similarity(vec1, vec2):
+            try:
+                v1 = np.array(vec1, dtype=float)
+                v2 = np.array(vec2, dtype=float)
+                n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
+                if n1 == 0 or n2 == 0 or np.isnan(n1) or np.isnan(n2):
+                    return 0.0
+                return float(np.dot(v1, v2) / (n1 * n2))
+            except Exception as e:
+                print(f"[WARN] cosine_similarity failed: {e}")
+                return 0.0
+
+        if not pois or not isinstance(pois, list):
+            print("[WARN] pois is empty or not a list")
+            return []
 
         results = []
         for p in pois:
-            sim = cosine_similarity(self.E_final, p['embedding'])
+            emb = p.get("embedding")
+            if emb is None or self.E_final is None:
+                sim = 0.0
+            else:
+                sim = safe_cosine_similarity(self.E_final, emb)
             results.append({**p, "similarity": sim})
 
-        results.sort(key=lambda x: x["similarity"], reverse=True)
-        return results[:top_n]
+        results.sort(key=lambda x: x.get("similarity", 0.0), reverse=True)
+        return results[:min(top_n, len(results))]
 
     # --- Шаг 6: стохастический отбор ---
     def stochastic_selection(self, pois: List[Dict[str, Any]], k: int = 30) -> List[Dict[str, Any]]:
@@ -165,125 +226,255 @@ class RoutePipeline:
         return chosen_sorted
 
     # --- Шаг 7: финальный выбор точек GPT ---
+
+    def sanitize_str(self, value: any, allow_symbols: str = r"A-Za-z0-9\-_") -> str:
+        """
+        Универсальная очистка строковых данных.
+        - Приводит значение к строке
+        - Убирает внешние кавычки и пробелы
+        - Если value — список или dict, сериализует в JSON
+        - Фильтрует недопустимые символы (по allow_symbols), если задано
+        """
+        if value is None:
+            return ""
+
+        # если список или словарь — превращаем в строку
+        if isinstance(value, (list, dict)):
+            value = json.dumps(value, ensure_ascii=False)
+
+        s = str(value).strip()
+        # убираем внешние кавычки
+        s = s.strip("'").strip('"').strip()
+
+        # если задан фильтр допустимых символов — применяем
+        if allow_symbols:
+            s = re.sub(fr"[^{allow_symbols}]", "", s)
+
+        return s
+
     def final_selection_gpt(self, candidate_points: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Отправляем список 30 точек в GPT с инструкцией:
-        «Выбери 5–7 точек для маршрута, учитывая интересы, настроение, бюджет и логистику».
-        GPT должен вернуть строго JSON-словарь с выбранными точками в порядке движения.
+        Отправляем список точек в GPT и формируем финальный маршрут.
         """
 
+        # безопасное формирование списка точек для промпта
+        def short_desc(s):
+            s = str(s or "")
+            return s[:300]
+
         points_text = "\n".join([
-            f"- id: {p['id']}, name: {p['name']}, desc: {p['description']}, "
-            f"coords: [{p['coordinates_lat']}, {p['coordinates_lng']}]"
+            f"- id: {self.sanitize_str(value=p.get('id'))}, "
+            f"name: {self.sanitize_str(value=p.get('name'), allow_symbols='')}, "
+            f"desc: {self.sanitize_str(value=p.get('description'), allow_symbols='')}, "
+            f"coords: [{p.get('coordinates_lat')}, {p.get('coordinates_lng')}]"
             for p in candidate_points
+            if self.sanitize_str(value=p.get("id")) and p.get("coordinates_lat") and p.get("coordinates_lng")
         ])
+
+        # полный промпт без сокращений
         prompt = (
             f"Исходный запрос пользователя:\n{self.req_payload}\n\n"
-            f"Описание маршрута от GPT:\n{self.gpt_text}\n\n"
-            f"Список доступных точек (30):\n{points_text}\n\n"
+            f"Описание маршрута:\n{self.gpt_text}\n\n"
+            f"Список доступных точек:\n{points_text}\n\n"
             f"Задача: выбери 7-10 точек для маршрута, учитывая интересы, настроение, бюджет и логистику.\n"
             f"Важные требования:\n"
             f"- Верни строго JSON-словарь.\n"
-            f"- Формат: {{\"points\": [{{\"id\": \"...\", \"order\": 1, \"reason\": \"...\"}}, ...]}}.\n"
+            f"- Формат: {{\"points\": [{{\"id\": \"...\", \"order\": 1}}, ...]}}.\n"
             f"- Используй только id из списка.\n"
             f"- Список точек отсортирован по приоритету (начало списка важнее).\n"
             f"- Выбирай преимущественно из первых точек, но допускается брать более дальние, если они лучше подходят для маршрута.\n"
             f"- Расположи точки в порядке движения по координатам (от стартовой точки).\n"
-            f"- Избегай точек, которые находятся на противоположных концах радиуса,\n"
-            f"- Формируй логичный маршрут а не разбросанные места\n"
+            f"- Избегай точек, которые находятся на противоположных концах радиуса.\n"
+            f"- Формируй логичный маршрут, а не разбросанные места.\n"
             f"- Не добавляй лишнего текста, только JSON.\n"
             f"- Верни только JSON без форматирования, без ```json и других обёрток."
         )
 
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{"role": "user", "content": prompt}],
-        )
+        # вызов GPT
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            result_text = (response.choices[0].message.content or "").strip()
+        except Exception as e:
+            print(f"[WARN] GPT call failed: {e}")
+            result_text = '{"points": []}'
 
-        result_text = response.choices[0].message.content.strip()
-        # Попробуем распарсить JSON
+        # парсинг JSON
         try:
             result_json = json.loads(result_text)
-        except Exception:
+        except Exception as e:
+            print(f"[WARN] JSON parse failed: {e}")
             result_json = {"points": []}
 
-        # --- Жадный алгоритм ближайшего соседа ---
-        if result_json.get("points"):
-            # словарь для быстрого доступа к координатам
-            point_map = {str(p["id"]): p for p in candidate_points}
+        if not isinstance(result_json.get("points"), list):
+            result_json["points"] = []
 
-            # стартовая точка
-            lat0, lon0 = map(float, self.req_payload.get("start_point").split(","))
-            ordered = []
-            remaining = result_json["points"]
+        # словарь для быстрого доступа к координатам
+        point_map = {
+            self.sanitize_str(value=p.get("id")): {
+                **p,
+                "id": self.sanitize_str(value=p.get("id")),
+                "name": self.sanitize_str(value=p.get("name"), allow_symbols=""),
+                "description": self.sanitize_str(value=p.get("description"), allow_symbols="")
+            }
+            for p in candidate_points if self.sanitize_str(value=p.get("id"))
+        }
 
-            current_lat, current_lon = lat0, lon0
-            order = 1
+        # стартовая точка
+        try:
+            lat0_str, lon0_str = str(self.req_payload.get("start_point", "0,0")).split(",")
+            lat0, lon0 = float(lat0_str.strip()), float(lon0_str.strip())
+        except Exception:
+            print("[WARN] Bad start_point format, using (0,0)")
+            lat0, lon0 = 0.0, 0.0
 
-            while remaining:
-                # ищем ближайшую точку
+        # очищаем точки из ответа GPT
+        cleaned_points = []
+        for p in result_json.get("points", []):
+            sid = self.sanitize_str(value=p.get("id"))
+            if sid and sid in point_map:
+                try:
+                    order_val = int(p.get("order") or 0)
+                except Exception:
+                    order_val = 0
+                cleaned_points.append({
+                    "id": sid,
+                    "order": order_val,
+                })
+
+        # жадный алгоритм ближайшего соседа
+        ordered = []
+        remaining = cleaned_points[:]
+        current_lat, current_lon = lat0, lon0
+        order = 1
+
+        while remaining:
+            try:
                 next_point = min(
                     remaining,
-                    key=lambda p: haversine(
+                    key=lambda pt: haversine(
                         current_lat, current_lon,
-                        float(point_map[p["id"]]["coordinates_lat"]),
-                        float(point_map[p["id"]]["coordinates_lng"])
+                        float(point_map[pt["id"]].get("coordinates_lat", 0.0)),
+                        float(point_map[pt["id"]].get("coordinates_lng", 0.0))
                     )
                 )
-                # добавляем в маршрут
-                next_point["order"] = order
-                ordered.append(next_point)
-                order += 1
+            except Exception as e:
+                print(f"[WARN] nearest point selection failed: {e}")
+                break
 
-                # обновляем текущие координаты
-                current_lat = float(point_map[next_point["id"]]["coordinates_lat"])
-                current_lon = float(point_map[next_point["id"]]["coordinates_lng"])
+            next_point["order"] = order
+            ordered.append(next_point)
+            order += 1
 
-                # убираем точку из списка
+            obj = point_map.get(next_point["id"])
+            if not obj:
                 remaining.remove(next_point)
+                continue
 
-            result_json["points"] = ordered
-            # --- Расчёт времени маршрута ---
-            user_time_limit = int(self.req_payload.get("duration_minutes", 180))  # время от пользователя
-            max_time = user_time_limit * 1.4  # +20% буфер
-            walk_speed_m_per_min = 70  # средняя скорость ходьбы
+            try:
+                current_lat = float(obj.get("coordinates_lat", 0.0))
+                current_lon = float(obj.get("coordinates_lng", 0.0))
+            except Exception:
+                current_lat, current_lon = 0.0, 0.0
 
-            total_time = 0.0
-            walk_time = 0.0
-            visit_time = 0.0
-            total_distance = 0.0
+            remaining.remove(next_point)
 
-            final_points = []
-            prev_lat, prev_lon = lat0, lon0
+        # расчёт времени маршрута
+        try:
+            user_time_limit = int(self.req_payload.get("duration_minutes", 180))
+        except Exception:
+            user_time_limit = 180
+        max_time = user_time_limit * 1.4
+        walk_speed_m_per_min = 70 if 70 > 0 else 1
 
-            for p in ordered:
-                # координаты точки
-                lat = float(point_map[p["id"]]["coordinates_lat"])
-                lon = float(point_map[p["id"]]["coordinates_lng"])
+        total_time = 0.0
+        walk_time = 0.0
+        visit_time = 0.0
+        total_distance_m = 0.0
+        final_points = []
+        prev_lat, prev_lon = lat0, lon0
 
-                # расстояние и время ходьбы до этой точки
-                dist = haversine(prev_lat, prev_lon, lat, lon)
-                walk_time_inc = dist / walk_speed_m_per_min
+        for p in ordered:
+            obj = point_map.get(p["id"])
+            if not obj:
+                continue
+            try:
+                lat = float(obj.get("coordinates_lat"))
+                lon = float(obj.get("coordinates_lng"))
+            except Exception:
+                continue
 
-                # время посещения из модели
-                visit_time_inc = int(point_map[p["id"]].get("average_visit_duration", 30))
+            dist_m = haversine(prev_lat, prev_lon, lat, lon)
+            walk_time_inc = dist_m / walk_speed_m_per_min
 
-                # проверка лимита
-                if (total_time + walk_time_inc + visit_time_inc) <= max_time:
-                    total_time += walk_time_inc + visit_time_inc
-                    walk_time += walk_time_inc
-                    visit_time += visit_time_inc
-                    total_distance += dist
+            try:
+                visit_time_inc = int(obj.get("average_visit_duration", 30))
+            except Exception:
+                visit_time_inc = 30
+            if visit_time_inc <= 0:
+                visit_time_inc = 30
 
-                    final_points.append(p)
-                    prev_lat, prev_lon = lat, lon
-                else:
-                    break  # дальше уже не влезаем по времени
+            if (total_time + walk_time_inc + visit_time_inc) <= max_time:
+                total_time += walk_time_inc + visit_time_inc
+                walk_time += walk_time_inc
+                visit_time += visit_time_inc
+                total_distance_m += dist_m
+                final_points.append(p)
+                prev_lat, prev_lon = lat, lon
+            else:
+                break
 
-            result_json["points"] = final_points
-            result_json["total_time"] = int(round(total_time))
-            result_json["walk_time_minutes"] = int(round(walk_time))
-            result_json["visit_time_minutes"] = int(round(visit_time))
+        points_text = "\n".join([
+            f"- id: {p['id']}, name: {point_map[p['id']]['name']}, "
+            f"desc: {point_map[p['id']].get('description', '')}, "
+            f"coords: [{point_map[p['id']]['coordinates_lat']}, {point_map[p['id']]['coordinates_lng']}]"
+            for p in final_points
+        ])
+
+        prompt_reason = (
+            f"Исходный запрос пользователя:\n{self.req_payload}\n\n"
+            f"Описание маршрута:\n{self.gpt_text}\n\n"
+            f"Финальный маршрут из {len(final_points)} точек:\n{points_text}\n\n"
+            f"Задача: для каждой точки напиши поле reason в формате рассказа, "
+            f"как будто ты идёшь вместе с другом-гидом и интересно описываешь маршрут.\n"
+            f"Соблюдай order 1-первая точка и тд.\n"
+            f"Формат ответа строго JSON:\n"
+            f"{{\"points\": [{{\"id\": \"...\", \"order\": 1, \"reason\": \"...\"}}, ...]}}\n"
+            f"- Используй только id из списка.\n"
+            f"- reason должен быть живым, дружеским, с атмосферой путешествия.\n"
+            f"- Для первой точки: «Начинаем мы в ... тут ...».\n"
+            f"- Для второй: «Далее мы видим ...».\n"
+            f"- Для третьей: «Следующая остановка ...» и так далее.\n"
+            f"- Не добавляй лишнего текста, только JSON.\n"
+            f"- Верни только JSON без ```json и других обёрток."
+        )
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt_reason}],
+        )
+        raw_content = response.choices[0].message.content.strip()
+        try:
+            reasons_result = json.loads(raw_content)
+        except json.JSONDecodeError:
+            with open("failed_reasons.txt", "w", encoding="utf-8") as f:
+                f.write(raw_content)
+            reasons_result = {"points": []}
+
+        # создаём словарь id -> reason
+        reason_map = {p["id"]: p.get("reason", "") for p in reasons_result.get("points", [])}
+
+        # добавляем reason в final_points
+        for p in final_points:
+            p["reason"] = reason_map.get(p["id"], "")
+
+        result_json["points"] = final_points
+        result_json["total_time"] = int(round(total_time))
+        result_json["walk_time_minutes"] = int(round(walk_time))
+        result_json["visit_time_minutes"] = int(round(visit_time))
+        result_json["total_distance_m"] = int(round(total_distance_m))
+
         self.final_points = result_json
         return result_json
 
@@ -329,6 +520,7 @@ class RoutePipeline:
         top_n = max(min_floor, top_n)
         top_n = min(max_cap, top_n, filtered_count)
         return top_n
+
     def run_pipeline(self, pois: List[Point]) -> Dict[str, Any]:
         """
         Запускаем весь пайплайн:

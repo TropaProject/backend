@@ -58,7 +58,8 @@ class Interest(models.Model):
         help_text='Категория интереса',
         null=True, blank=True,
     )
-
+    is_seasonal=models.BooleanField(default=False)
+    is_view = models.BooleanField(default=True)
     class Meta:
         db_table = 'interests'
         verbose_name = 'Интерес'
@@ -101,6 +102,12 @@ class Point(models.Model):
     name = models.CharField(max_length=1000, help_text='Название точки')
     description = models.TextField(help_text='Описание точки')
     tags = models.ManyToManyField(Tag, blank=True, related_name="points")
+    keywords = ArrayField(
+        models.CharField(max_length=100),
+        null=True,
+        blank=True,
+        help_text="Ключевые слова для улучшения эмбеддинга и поиска"
+    )
     image_url = models.URLField(null=True, blank=True, help_text='URL фотографии точки')
     city = models.ForeignKey(City, on_delete=models.CASCADE, help_text='Город, к которому относится точка')
     area=models.ForeignKey(CityArea,on_delete=models.CASCADE,help_text='Район точки', null=True, blank=True)
