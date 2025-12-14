@@ -46,7 +46,10 @@ class RefreshView(APIView):
             refresh = RefreshToken(refresh_token)
             new_access = str(refresh.access_token)
             return Response(
-                {"status": "success", "data": {"access": new_access}},
+                {
+                    "access": new_access,
+                    "refresh": str(refresh)  # добавляем refresh для совместимости
+                },
                 status=status.HTTP_200_OK,
             )
         except TokenError:
