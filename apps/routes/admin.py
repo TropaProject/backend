@@ -38,8 +38,7 @@ class MoodAdmin(admin.ModelAdmin):
 class PointAdmin(admin.ModelAdmin):
     list_display = ("id", "name", "city", "average_visit_duration", "average_cost", "is_partner")
     search_fields = ("id", "name", "city__name")
-    list_filter = ("city", "is_partner", "partner_tier")
-    filter_horizontal = ("interests", "moods")
+    list_filter = ("city", "is_partner", "partner_tier",'interests')
 
 
 @admin.register(PointEmbedding)

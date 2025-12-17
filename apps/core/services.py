@@ -58,7 +58,10 @@ def build_point_text(point: Point) -> str:
         mood_texts.append(f"{mood.label.strip()} | {mood.description.strip() if mood.description else ''}")
     if mood_texts:
         parts.append("Настроения: " + "; ".join(mood_texts))
-
+    if hasattr(point, "keywords") and point.keywords:
+        keywords_text = ", ".join([kw.strip() for kw in point.keywords if kw])
+        if keywords_text:
+            parts.append(f"Ключевые слова: {keywords_text}")
     # Нормализация: убираем пустые строки и лишние пробелы
     normalized_parts = [p.strip() for p in parts if p and p.strip()]
 

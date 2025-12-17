@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Проверка Points JSON</title>
+</head>
+<body>
+    <h1>Проверка Points JSON</h1>
+
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="file" name="file" accept=".json">
+        <button type="submit">Проверить</button>
+    </form>
+
+    {% if error %}
+        <p style="color:red;">{{ error }}</p>
+    {% endif %}
+
+    {% if status %}
+        <h2>Результат: {{ status }}</h2>
+
+        <h3>Interests</h3>
+        {% if missing_interests %}
+            <p>Отсутствуют: {{ missing_interests|join:", " }}</p>
+        {% else %}
+            <p>Все interests существуют ✅</p>
+        {% endif %}
+
+        <h3>Tags</h3>
+        {% if missing_tags %}
+            <p>Отсутствуют: {{ missing_tags|join:", " }}</p>
+        {% else %}
+            <p>Все tags существуют ✅</p>
+        {% endif %}
+
+        <h3>Moods</h3>
+        {% if missing_moods %}
+            <p>Отсутствуют: {{ missing_moods|join:", " }}</p>
+        {% else %}
+            <p>Все moods существуют ✅</p>
+        {% endif %}
+
+        <p><a href="{% url 'download_cleaned_json' %}">Скачать очищенный JSON</a></p>
+    {% endif %}
+</body>
+</html>

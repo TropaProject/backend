@@ -117,4 +117,4 @@ category = "amenity=cafe"
 # несколько тегов (ИЛИ)
 categories = ["tourism=museum", "amenity=theatre", "amenity=arts_centre", "gallery=yes"]
 
-collect_points(circles, categories, "museum.json")
+collect_points(circles, categories, "../../../datas/museum.json")

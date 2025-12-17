@@ -16,3 +16,7 @@ dist/
 # IDE configs
 .idea/
 .vscode/
+
+datas/
+
+.datas/
