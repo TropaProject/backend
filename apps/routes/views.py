@@ -332,6 +332,7 @@ class RouteDetailView(APIView):
             "walk_time":route.walk_time,
             "visit_time":route.visit_time,
             "total_cost": route.total_cost,
+            "total_meters":route.total_meters,
             "status": route.status,
             "point_sequence": route.point_sequence,
             "points": [
