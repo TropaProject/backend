@@ -120,8 +120,8 @@ class UserStatisticsView(APIView):
 
         # Протяжённость маршрутов (если в модели Point есть координаты lat/lng)
         # Здесь можно вставить функцию расчёта расстояния по координатам
-        total_distance_km = 0.0  # пока заглушка
-
+        total_distance_m = qs.aggregate(Sum("total_meters"))["total_meters__sum"] or 0
+        total_distance_km = total_distance_m//1000
         # Любимый город (где больше всего маршрутов)
         favourite_city = (
             qs.values("city__name")

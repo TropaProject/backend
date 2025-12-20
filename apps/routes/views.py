@@ -153,12 +153,15 @@ class GenerateRouteView(APIView):
                 total_cost = calculate_total_cost(ordered_points)
                 total_duration = final_result.get("total_time", 0)
                 total_meters = calculate_total_meters(ordered_points)
+                name = final_result.get("name", "")
                 route = Route.objects.create(
                     total_duration=total_duration,
                     total_cost=total_cost,
                     total_meters=total_meters,
+                    walk_time=final_result.get("walk_time_minutes", 0),
+                    visit_time=final_result.get("visit_time_minutes", 0),
                     city=city,
-                    description=data.get("gpt_description") or data.get("description") or "",
+                    description=name,
                     user=request.user,
                     point_sequence=[p.id for p in ordered_points],
                     status=Route.WalkStatus.GOING,
@@ -189,8 +192,8 @@ class GenerateRouteView(APIView):
                         "visit_time": getattr(p, "visit_time", None) or "30 мин",
                         "tags": [t.name for t in p.tags.all()] if hasattr(p, "tags") else [],
                         "coordinates": {
-                             "lat": float(p.coordinates_lat),
-                             "lng": float(p.coordinates_lng),
+                            "lat": float(p.coordinates_lat),
+                            "lng": float(p.coordinates_lng),
                         },
                     })
                 except Exception as e:
@@ -200,6 +203,7 @@ class GenerateRouteView(APIView):
             map_url = build_yandex_map_url([ep["coordinates"] for ep in enriched_points])
             response_data = {
                 "route_id": str(route.id),
+                "route_name": str(route.description),
                 "total_duration": route.total_duration,
                 "total_meters": route.total_meters,
                 "total_cost": route.total_cost,
@@ -221,7 +225,6 @@ class GenerateRouteView(APIView):
                 {"status": "error", "message": "Непредвиденная ошибка", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
 
 
 class EditRouteStatusView(APIView):
@@ -326,6 +329,8 @@ class RouteDetailView(APIView):
             "user_id": route.user.id if route.user else None,
             "description": route.description,
             "total_duration": route.total_duration,
+            "walk_time":route.walk_time,
+            "visit_time":route.visit_time,
             "total_cost": route.total_cost,
             "status": route.status,
             "point_sequence": route.point_sequence,
@@ -460,7 +465,6 @@ class GenerateDescriptionView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-
 @csrf_exempt
 def pipeline_view(request):
     context = {}
@@ -469,8 +473,8 @@ def pipeline_view(request):
         req_payload = {
             "city_id": form.get("city_id"),
             "time_of_day": form.get("time_of_day"),
-            "interests": [s.strip() for s in form.get("interests","").split(",") if s.strip()],
-            "mood": [s.strip() for s in form.get("mood","").split(",") if s.strip()],
+            "interests": [s.strip() for s in form.get("interests", "").split(",") if s.strip()],
+            "mood": [s.strip() for s in form.get("mood", "").split(",") if s.strip()],
             "budget": form.get("budget"),
             "transport": form.get("transport"),
             "duration_minutes": int(form.get("duration_minutes") or 0),

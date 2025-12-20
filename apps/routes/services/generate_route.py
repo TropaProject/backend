@@ -447,6 +447,10 @@ class RoutePipeline:
             f"- Для первой точки: «Начинаем мы в ... тут ...».\n"
             f"- Для второй: «Далее мы видим ...».\n"
             f"- Для третьей: «Следующая остановка ...» и так далее.\n"
+            f"- Также сгенерируй короткое название всего маршрута (поле name). "
+            f"- Название должно быть максимально коротким, в одном предложении, атмосферным и отражать суть маршрута.\n"
+            f"- Формат ответа строго JSON:\n"
+            f"{{\"name\": \"...\", \"points\": [{{\"id\": \"...\", \"order\": 1, \"reason\": \"...\"}}, ...]}}.\n"
             f"- Не добавляй лишнего текста, только JSON.\n"
             f"- Верни только JSON без ```json и других обёрток."
         )
@@ -468,7 +472,7 @@ class RoutePipeline:
         # добавляем reason в final_points
         for p in final_points:
             p["reason"] = reason_map.get(p["id"], "")
-
+        result_json["name"] = reasons_result.get("name", "")
         result_json["points"] = final_points
         result_json["total_time"] = int(round(total_time))
         result_json["walk_time_minutes"] = int(round(walk_time))

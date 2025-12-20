@@ -184,6 +184,8 @@ class Route(models.Model):
     id = models.CharField(max_length=50, primary_key=True, default=uuid.uuid4)
     created_at = models.DateTimeField(auto_now_add=True)
     total_duration = models.IntegerField(help_text='Общее время прогулки в минутах')
+    walk_time = models.IntegerField(help_text='время пешком в минутах',default=0)
+    visit_time = models.IntegerField(help_text='время посещения в минутах',default=0)
     total_cost = models.IntegerField(null=True, blank=True, help_text='Общий бюджет маршрута')
     total_meters=models.IntegerField(null=True, blank=True, help_text='Общее расстояние маршрута')
     city = models.ForeignKey("City", on_delete=models.CASCADE, related_name="routes",null=True, blank=True)
