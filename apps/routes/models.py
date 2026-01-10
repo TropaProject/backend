@@ -190,6 +190,8 @@ class Route(models.Model):
     total_meters=models.IntegerField(null=True, blank=True, help_text='Общее расстояние маршрута')
     city = models.ForeignKey("City", on_delete=models.CASCADE, related_name="routes",null=True, blank=True)
     description = models.TextField(null=True, blank=True, help_text='Текстовый гид или описание маршрута')
+    lat0=models.DecimalField(max_digits=9, decimal_places=6, help_text='Широта',default=55.766157)
+    lon0=models.DecimalField(max_digits=9, decimal_places=6, help_text='Долгота',default=37.617797)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,

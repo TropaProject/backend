@@ -21,29 +21,6 @@ def calculate_total_cost(points):
     return int(total_cost)
 
 
-# --- 2. Расчёт общей длительности маршрута ---
-def calculate_total_duration(points, api_key=api):
-    if api_key and len(points) >= 2:
-        coords = [[float(p.coordinates_lng), float(p.coordinates_lat)] for p in points]
-        url = "https://api.openrouteservice.org/v2/directions/foot-walking"
-        headers = {"Authorization": api_key, "Content-Type": "application/json"}
-        body = {"coordinates": coords}
-
-        try:
-            resp = requests.post(url, json=body, headers=headers).json()
-            print("[DEBUG] Ответ ORS (duration):")
-            if "routes" in resp:
-                duration_sec = resp["routes"][0]["summary"]["duration"]
-                duration_min = int(round(duration_sec / 60))
-                print(f"[INFO] Успешно рассчитана длительность: {duration_min} мин")
-                return duration_min
-        except Exception as e:
-            print("[ERROR] Ошибка при запросе ORS (duration):", e)
-
-    duration_fallback = sum([getattr(p, "visit_time", 30) for p in points])
-    print(f"[WARN] Fallback длительность: {duration_fallback} мин")
-    return int(duration_fallback)
-
 
 def calculate_total_meters(points, api_key=api):
     if api_key and len(points) >= 2:
@@ -72,3 +49,53 @@ def calculate_total_meters(points, api_key=api):
         )
     print(f"[WARN] Fallback длина: {int(total)} м")
     return int(total)
+
+
+def calculate_route_times(points, point_map, lat0, lon0):
+    walk_speed_m_per_min = 70
+
+    walk_time = 0.0
+    visit_time = 0.0
+    total_distance_m = 0.0
+
+    prev_lat, prev_lon = lat0, lon0
+
+    for p in points:
+        obj = point_map.get(p["id"])
+        if not obj:
+            continue
+
+        try:
+            lat = float(obj.get("coordinates_lat"))
+            lon = float(obj.get("coordinates_lng"))
+        except Exception:
+            lat = float(obj.coordinates_lat)
+            lon = float(obj.coordinates_lng)
+
+        # расстояние
+        dist_m = haversine(prev_lat, prev_lon, lat, lon)
+        total_distance_m += dist_m
+        # время ходьбы
+        walk_time_inc = dist_m / walk_speed_m_per_min
+        walk_time += walk_time_inc
+
+        # время посещения
+        try:
+            visit_time_inc = int(obj.get("average_visit_duration", 30))
+        except Exception:
+            visit_time_inc = 30
+
+        if visit_time_inc <= 0:
+            visit_time_inc = 30
+
+        visit_time += visit_time_inc
+
+        prev_lat, prev_lon = lat, lon
+
+    total_time = walk_time + visit_time
+
+    return {
+        "total_time": int(round(total_time)),
+        "walk_time": int(round(walk_time)),
+        "visit_time": int(round(visit_time))
+    }

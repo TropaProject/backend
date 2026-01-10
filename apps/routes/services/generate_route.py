@@ -8,6 +8,10 @@ from openai import OpenAI
 from django.conf import settings
 
 from apps.routes.models import Point, PointEmbedding
+from apps.routes.services.route_metrics import calculate_route_times
+
+client = OpenAI(api_key=settings.OPENAI_API_KEY,
+                base_url="https://api.proxyapi.ru/openai/v1")
 
 
 def build_yandex_map_url(points):
@@ -44,8 +48,6 @@ def haversine(lat1, lon1, lat2, lon2):
         return float("inf")  # безопасный fallback
 
 
-client = OpenAI(api_key=settings.OPENAI_API_KEY,
-                base_url="https://api.proxyapi.ru/openai/v1")
 
 
 class RoutePipeline:
@@ -276,7 +278,7 @@ class RoutePipeline:
             f"Исходный запрос пользователя:\n{self.req_payload}\n\n"
             f"Описание маршрута:\n{self.gpt_text}\n\n"
             f"Список доступных точек:\n{points_text}\n\n"
-            f"Задача: выбери 7-10 точек для маршрута, учитывая интересы, настроение, бюджет и логистику.\n"
+            f"Задача: выбери 5-8 точек для маршрута, учитывая интересы, настроение, бюджет и логистику.\n"
             f"Важные требования:\n"
             f"- Верни строго JSON-словарь.\n"
             f"- Формат: {{\"points\": [{{\"id\": \"...\", \"order\": 1}}, ...]}}.\n"
@@ -381,18 +383,15 @@ class RoutePipeline:
 
             remaining.remove(next_point)
 
-        # расчёт времени маршрута
         try:
             user_time_limit = int(self.req_payload.get("duration_minutes", 180))
         except Exception:
             user_time_limit = 180
-        max_time = user_time_limit * 1.4
-        walk_speed_m_per_min = 70 if 70 > 0 else 1
 
-        total_time = 0.0
-        walk_time = 0.0
-        visit_time = 0.0
-        total_distance_m = 0.0
+        max_time = user_time_limit * 1.2
+        walk_speed_m_per_min = 70
+
+        accumulated_time = 0.0
         final_points = []
         prev_lat, prev_lon = lat0, lon0
 
@@ -400,6 +399,7 @@ class RoutePipeline:
             obj = point_map.get(p["id"])
             if not obj:
                 continue
+
             try:
                 lat = float(obj.get("coordinates_lat"))
                 lon = float(obj.get("coordinates_lng"))
@@ -413,14 +413,10 @@ class RoutePipeline:
                 visit_time_inc = int(obj.get("average_visit_duration", 30))
             except Exception:
                 visit_time_inc = 30
-            if visit_time_inc <= 0:
-                visit_time_inc = 30
 
-            if (total_time + walk_time_inc + visit_time_inc) <= max_time:
-                total_time += walk_time_inc + visit_time_inc
-                walk_time += walk_time_inc
-                visit_time += visit_time_inc
-                total_distance_m += dist_m
+            # фильтрация по лимиту времени
+            if (accumulated_time + walk_time_inc + visit_time_inc) <= max_time:
+                accumulated_time += walk_time_inc + visit_time_inc
                 final_points.append(p)
                 prev_lat, prev_lon = lat, lon
             else:
@@ -472,13 +468,15 @@ class RoutePipeline:
         # добавляем reason в final_points
         for p in final_points:
             p["reason"] = reason_map.get(p["id"], "")
+        cal = calculate_route_times(final_points, point_map, lat0, lon0)
+        total_time = cal["total_time"]
+        walk_time = cal["walk_time"]
+        visit_time = cal["visit_time"]
         result_json["name"] = reasons_result.get("name", "")
         result_json["points"] = final_points
         result_json["total_time"] = int(round(total_time))
         result_json["walk_time_minutes"] = int(round(walk_time))
         result_json["visit_time_minutes"] = int(round(visit_time))
-        result_json["total_distance_m"] = int(round(total_distance_m))
-
         self.final_points = result_json
         return result_json
 
