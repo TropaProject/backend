@@ -60,7 +60,8 @@ LOCAL_APPS = [
     'apps.routes',
     'apps.users',
     'apps.articles',
-    'apps.core'
+    'apps.core',
+    'apps.points'
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 

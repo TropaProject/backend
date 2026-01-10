@@ -3,6 +3,7 @@ from django.contrib.postgres.fields import ArrayField
 import uuid
 from apps.partners.models import Partner
 from django.conf import settings
+from django.contrib.auth.models import User
 
 
 class City(models.Model):
@@ -121,6 +122,8 @@ class Point(models.Model):
     is_partner = models.BooleanField(default=False, help_text='Является ли точка партнерской')
     partner_tier = models.CharField(max_length=10, null=True, blank=True, choices=Partner.TIER_CHOICES)
     partner = models.ForeignKey(Partner, on_delete=models.SET_NULL, null=True, blank=True)
+    average_rating = models.DecimalField(max_digits=2, decimal_places=1, default=0.0)
+    reviews_count = models.IntegerField(default=0)
     BEST_TIME_CHOICES = [
         ('morning', 'Утром (6:00-12:00)'),
         ('afternoon', 'Днём (12:00-18:00)'),
@@ -242,3 +245,20 @@ class Feedback(models.Model):
 
     def __str__(self):
         return f"Feedback {self.id} for Route {self.route.id}"
+
+
+
+class ReviewPoint(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    point = models.ForeignKey(Point, on_delete=models.CASCADE, related_name="reviews")
+
+    rating = models.DecimalField(max_digits=2, decimal_places=1)  # 1.0–5.0
+    comment = models.TextField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("user", "point")  # один отзыв на точку от пользователя

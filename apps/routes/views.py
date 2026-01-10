@@ -3,21 +3,16 @@ from django.shortcuts import render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from openai import OpenAI
-
-
 from rest_framework import status, permissions
-
-from .models import City, Interest, Mood, CityArea, Route, Feedback, Point
+from .models import City, Mood, CityArea, Feedback,Route, Point, Interest, PointEmbedding
 from .serializers import CitySerializer, InterestSerializer, MoodSerializer
 from .services.generate_route import RoutePipeline, build_yandex_map_url
 from .services.route_metrics import calculate_total_cost, calculate_total_meters, haversine, calculate_route_times
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
 from numpy import dot
 from numpy.linalg import norm
 
-from .models import Route, Point, Interest, PointEmbedding
 from ..core.services import generate_embedding
 
 
@@ -206,6 +201,8 @@ class GenerateRouteView(APIView):
                         "image_url": getattr(p, "image_url", None),
                         "visit_time": getattr(p, "visit_time", None) or "30 мин",
                         "tags": [t.name for t in p.tags.all()] if hasattr(p, "tags") else [],
+                        "average_rating":p.average_rating,
+                        "reviews_count":p.reviews_count,
                         "coordinates": {
                             "lat": float(p.coordinates_lat),
                             "lng": float(p.coordinates_lng),
@@ -360,6 +357,8 @@ class RouteDetailView(APIView):
                     "id": p.id,
                     "name": p.name,
                     "description": p.description,
+                    "average_rating": p.average_rating,
+                    "reviews_count": p.reviews_count,
                     "image_url": p.image_url,
                     "coordinates": {
                         "lat": float(p.coordinates_lat),
@@ -661,6 +660,8 @@ class AddFoodPointView(APIView):
                     "description": p.description,
                     "reason": p.description,  # временно reason = description
                     "image_url": p.image_url if hasattr(p, "image_url") else None,
+                    "average_rating": p.average_rating,
+                    "reviews_count": p.reviews_count,
                     "visit_time": f"{p.average_visit_duration or 30} мин",
                     "tags": [t.name for t in p.tags.all()] if hasattr(p, "tags") else [],
                     "coordinates": {
