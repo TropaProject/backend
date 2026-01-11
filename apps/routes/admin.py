@@ -1,5 +1,6 @@
+
+from .models import City, CityArea, Interest, Mood, Point, PointEmbedding, Route, Feedback, InterestCategory, Tag,ReviewPoint, FavoritePoint
 from django.contrib import admin
-from .models import City, CityArea, Interest, Mood, Point, PointEmbedding, Route, Feedback, InterestCategory, Tag
 
 
 @admin.register(City)
@@ -66,3 +67,49 @@ class FeedbackAdmin(admin.ModelAdmin):
 class InterestAdmin(admin.ModelAdmin):
     list_display = ('id',"name", "category")
     search_fields = ("name", "category")
+
+
+
+
+@admin.register(ReviewPoint)
+class ReviewPointAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "point", "rating", "created_at", "updated_at")
+    list_filter = ("rating", "created_at", "updated_at")
+    search_fields = ("user__username", "user__email", "point__name", "comment")
+    ordering = ("-created_at",)
+    readonly_fields = ("created_at", "updated_at")
+
+    fieldsets = (
+        ("Основная информация", {
+            "fields": ("user", "point", "rating", "comment")
+        }),
+        ("Служебные поля", {
+            "fields": ("created_at", "updated_at"),
+            "classes": ("collapse",)
+        }),
+    )
+
+
+@admin.register(FavoritePoint)
+class FavoritePointAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "point", "note_short", "created_at")
+    list_filter = ("created_at",)
+    search_fields = ("user__username", "user__email", "point__name", "note")
+    ordering = ("-created_at",)
+    readonly_fields = ("created_at",)
+
+    fieldsets = (
+        ("Основная информация", {
+            "fields": ("user", "point", "note")
+        }),
+        ("Служебные поля", {
+            "fields": ("created_at",),
+            "classes": ("collapse",)
+        }),
+    )
+
+    def note_short(self, obj):
+        if not obj.note:
+            return ""
+        return obj.note[:40] + ("..." if len(obj.note) > 40 else "")
+    note_short.short_description = "Заметка"

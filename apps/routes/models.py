@@ -262,3 +262,14 @@ class ReviewPoint(models.Model):
 
     class Meta:
         unique_together = ("user", "point")  # один отзыв на точку от пользователя
+
+
+class FavoritePoint(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    point = models.ForeignKey(Point, on_delete=models.CASCADE)
+    note = models.TextField(null=True, blank=True)  # ← заметка пользователя
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("user", "point")
+        db_table = "favorite_points"

@@ -1,5 +1,5 @@
 from rest_framework import permissions
-from apps.routes.models import Point, ReviewPoint
+from apps.routes.models import Point, ReviewPoint, FavoritePoint
 from rest_framework.response import Response
 from django.db import models
 from rest_framework.views import APIView
@@ -163,3 +163,76 @@ class PointAllReviewsView(APIView):
                 "reviews": reviews_payload
             }
         }, status=200)
+
+
+class ToggleFavoritePointView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, point_id):
+        try:
+            point = Point.objects.get(id=point_id)
+        except Point.DoesNotExist:
+            return Response({"error": "Point not found"}, status=404)
+
+        fav, created = FavoritePoint.objects.get_or_create(
+            user=request.user,
+            point=point
+        )
+
+        if not created:
+            fav.delete()
+            return Response({"status": "removed"})
+
+        return Response({"status": "added"})
+
+
+class UpdateFavoriteNoteView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, point_id):
+        note = request.data.get("note", "")
+
+        try:
+            point = Point.objects.get(id=point_id)
+        except Point.DoesNotExist:
+            return Response({"error": "Point not found"}, status=404)
+
+        fav, _ = FavoritePoint.objects.get_or_create(
+            user=request.user,
+            point=point
+        )
+
+        fav.note = note
+        fav.save(update_fields=["note"])
+
+        return Response({"status": "success", "note": fav.note})
+
+class UserFavoritePointsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        favorites = (
+            FavoritePoint.objects
+            .filter(user=request.user)
+            .select_related("point")
+            .order_by("-created_at")
+        )
+
+        data = [
+            {
+                "id": fav.point.id,
+                "name": fav.point.name,
+                "image_url": fav.point.image_url,
+                "description":fav.point.description,
+                "average_rating": float(fav.point.average_rating),
+                "coordinates": {
+                    "lat": float(fav.point.coordinates_lat),
+                    "lng": float(fav.point.coordinates_lng),
+                },
+                "note": fav.note,  # ← заметка
+                "added_at": fav.created_at.isoformat()
+            }
+            for fav in favorites
+        ]
+
+        return Response({"status": "success", "data": data})
