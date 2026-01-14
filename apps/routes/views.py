@@ -32,7 +32,15 @@ class FormDataView(APIView):
             }
         }, status=status.HTTP_200_OK)
 
-
+class FormFoodView(APIView):
+    def get(self, request):
+        interests = Interest.objects.filter(category__id="food")
+        return Response({
+            "status": "success",
+            "data": {
+                "interests": InterestSerializer(interests, many=True).data,
+            }
+        }, status=status.HTTP_200_OK)
 class CityAreaView(APIView):
     def get(self, request):
         city_id = request.query_params.get("city_id")

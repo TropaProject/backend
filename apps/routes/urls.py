@@ -4,6 +4,7 @@ from django.urls import path
 urlpatterns = [
     path("feedback/", FeedbackView.as_view(), name="route-feedback"),
     path('form/', FormDataView.as_view(), name='form-data-view'),
+    path('food-form/', FormFoodView.as_view(), name='form-food-view'),
     path("area/", CityAreaView.as_view(), name="city-areas"),
     path("generate/", GenerateRouteView.as_view(), name="generate-route"),
     path("edit-status/", EditRouteStatusView.as_view(), name="edit-route-status"),
