@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% block title %}Назначение точек фрилансерам{% endblock %}
+{% block content %}
+<h2>Назначение точек</h2>
+
+<!-- Форма фильтрации только по району -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3" id="filterForm">
+            <div class="col-md-4">
+                <label for="area" class="form-label">Район</label>
+                <select name="area" id="area" class="form-select" onchange="this.form.submit()">
+                    <option value="">Все районы</option>
+                    {% for area in areas %}
+                        <option value="{{ area.id }}" {% if selected_area == area.id %}selected{% endif %}>
+                            {{ area.city.name }} - {{ area.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <a href="{% url 'assign_points' %}" class="btn btn-secondary">Сбросить</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Форма назначения -->
+<form method="post" id="assignForm">
+    {% csrf_token %}
+    <input type="hidden" name="area" value="{{ filter_params.area }}">
+    <input type="hidden" name="select_all" id="selectAllHidden" value="false">
+
+    <div class="mb-3">
+        <label for="freelancer" class="form-label">Выберите фрилансера:</label>
+        <select name="freelancer" id="freelancer" class="form-select" required>
+            <option value="">-- выберите --</option>
+            {% for f in freelancers %}
+                <option value="{{ f.id }}">{{ f.user.username }} ({{ f.assigned_city.name|default:"любой город" }})</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="selectAllPageBtn">Выбрать все на этой странице</button>
+        <button type="button" class="btn btn-outline-danger btn-sm" id="selectAllFilteredBtn">Выбрать все отфильтрованные ({{ total_count }} точек)</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="deselectAllBtn">Снять все</button>
+        <span class="ms-3" id="selectedCount">Выбрано: 0</span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="selectAllCheckbox"></th>
+                    <th>Название</th>
+                    <th>Город</th>
+                    <th>Район</th>
+                    <th>Статус</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for point in points %}
+                <tr>
+                    <td><input type="checkbox" name="points" value="{{ point.id }}" class="point-checkbox"></td>
+                    <td>{{ point.name }}</td>
+                    <td>{{ point.city.name }}</td>
+                    <td>{{ point.area.name|default:"—" }} ({{ point.area.city.name|default:"" }})</td>
+                    <td>{{ point.get_edit_status_display }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5">Нет точек для назначения.{% if selected_area %} Попробуйте выбрать другой район.{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Пагинация -->
+    <div class="d-flex justify-content-between align-items-center mt-3">
+        <div>Показано {{ points.start_index }} - {{ points.end_index }} из {{ points.paginator.count }} точек</div>
+        <nav>
+            <ul class="pagination">
+                {% if points.has_previous %}
+                    <li class="page-item"><a class="page-link" href="?page=1&area={{ selected_area }}">&laquo; Первая</a></li>
+                    <li class="page-item"><a class="page-link" href="?page={{ points.previous_page_number }}&area={{ selected_area }}">Назад</a></li>
+                {% endif %}
+                <li class="page-item active"><span class="page-link">Страница {{ points.number }} из {{ points.paginator.num_pages }}</span></li>
+                {% if points.has_next %}
+                    <li class="page-item"><a class="page-link" href="?page={{ points.next_page_number }}&area={{ selected_area }}">Вперед</a></li>
+                    <li class="page-item"><a class="page-link" href="?page={{ points.paginator.num_pages }}&area={{ selected_area }}">Последняя &raquo;</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+
+    <button type="submit" class="btn btn-primary mt-3">Назначить выбранные точки</button>
+</form>
+
+<script>
+    const checkboxes = document.querySelectorAll('.point-checkbox');
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const selectAllPageBtn = document.getElementById('selectAllPageBtn');
+    const selectAllFilteredBtn = document.getElementById('selectAllFilteredBtn');
+    const deselectAllBtn = document.getElementById('deselectAllBtn');
+    const selectedCountSpan = document.getElementById('selectedCount');
+    const assignForm = document.getElementById('assignForm');
+    const selectAllHidden = document.getElementById('selectAllHidden');
+
+    function updateSelectedCount() {
+        const checked = document.querySelectorAll('.point-checkbox:checked').length;
+        selectedCountSpan.textContent = `Выбрано: ${checked}`;
+        const allVisible = document.querySelectorAll('.point-checkbox').length;
+        selectAllCheckbox.checked = (checked === allVisible && allVisible > 0);
+    }
+
+    checkboxes.forEach(cb => cb.addEventListener('change', updateSelectedCount));
+
+    selectAllCheckbox.addEventListener('change', function(e) {
+        const isChecked = e.target.checked;
+        document.querySelectorAll('.point-checkbox').forEach(cb => cb.checked = isChecked);
+        updateSelectedCount();
+    });
+
+    selectAllPageBtn.addEventListener('click', function() {
+        document.querySelectorAll('.point-checkbox').forEach(cb => cb.checked = true);
+        updateSelectedCount();
+        selectAllCheckbox.checked = true;
+        selectAllHidden.value = 'false';
+    });
+
+    selectAllFilteredBtn.addEventListener('click', function() {
+        const total = {{ total_count }};
+        if (total === 0) {
+            alert('Нет точек для назначения.');
+            return;
+        }
+        if (confirm(`Вы действительно хотите назначить ВСЕ ${total} отфильтрованных точек?`)) {
+            selectAllHidden.value = 'true';
+            document.querySelectorAll('.point-checkbox').forEach(cb => cb.checked = false);
+            updateSelectedCount();
+            assignForm.submit();
+        }
+    });
+
+    deselectAllBtn.addEventListener('click', function() {
+        document.querySelectorAll('.point-checkbox').forEach(cb => cb.checked = false);
+        updateSelectedCount();
+        selectAllCheckbox.checked = false;
+        selectAllHidden.value = 'false';
+    });
+
+    // При ручном выборе сбрасываем флаг массового назначения
+    document.querySelectorAll('.point-checkbox').forEach(cb => {
+        cb.addEventListener('change', function() {
+            selectAllHidden.value = 'false';
+        });
+    });
+
+    assignForm.addEventListener('submit', function(e) {
+        if (selectAllHidden.value === 'true') return true;
+        const checked = document.querySelectorAll('.point-checkbox:checked').length;
+        if (checked === 0) {
+            alert('Выберите хотя бы одну точку для назначения.');
+            e.preventDefault();
+            return false;
+        }
+        return confirm(`Назначить выбранные точки (${checked} шт.)?`);
+    });
+
+    updateSelectedCount();
+</script>
+{% endblock %}

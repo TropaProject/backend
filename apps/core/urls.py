@@ -1,6 +1,8 @@
-from django.urls import path
+from django.contrib.auth.views import LogoutView
+from django.urls import path, include
 from .views import EmbedMissingPointsView, EmbedRefreshPointsView, EmbedUpdatePointView, map_view, check_points_page, \
     download_cleaned_json
+
 
 urlpatterns = [
     path("embed-missing/", EmbedMissingPointsView.as_view(), name="embed-missing-points"),
@@ -8,5 +10,5 @@ urlpatterns = [
     path("embed-update/<str:point_id>/", EmbedUpdatePointView.as_view(), name="embed-update-point"),
     path("map/", map_view, name="map_view"),
     path("check-points/", check_points_page, name="check_points_page"),
-    path("download-cleaned/", download_cleaned_json, name="download_cleaned_json")
+    path("download-cleaned/", download_cleaned_json, name="download_cleaned_json"),
 ]

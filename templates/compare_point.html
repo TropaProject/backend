@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block title %}Сравнение: {{ point.name }}{% endblock %}
+{% block content %}
+<h2>Сравнение изменений для "{{ point.name }}"</h2>
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-secondary text-white">Было (до редактирования)</div>
+            <div class="card-body">
+                <ul class="list-group">
+                    <li class="list-group-item"><strong>Описание:</strong> {{ original.description|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Теги:</strong> {{ original.tags|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Интересы:</strong> {{ original.interests|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Настроения:</strong> {{ original.moods|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Ключевые слова:</strong> {{ original.keywords|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Длительность (мин):</strong> {{ original.average_visit_duration|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Стоимость:</strong> {{ original.average_cost|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Время посещения:</strong> {{ original.best_visit_time|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Режим работы:</strong> <pre>{{ original.working_hours_json|default:"—" }}</pre></li>
+                    <li class="list-group-item"><strong>Сезонное:</strong> {{ original.is_seasonal|yesno:"Да,Нет" }}</li>
+                    <li class="list-group-item"><strong>Месяцы:</strong> {{ original.seasonal_months|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Фото URL:</strong> {{ original.image_url|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Адрес:</strong> {{ original.address|default:"—" }}</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">Стало (предложено фрилансером)</div>
+            <div class="card-body">
+                <ul class="list-group">
+                    <li class="list-group-item"><strong>Описание:</strong> {{ current.description|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Теги:</strong> {{ current.tags|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Интересы:</strong> {{ current.interests|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Настроения:</strong> {{ current.moods|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Ключевые слова:</strong> {{ current.keywords|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Длительность (мин):</strong> {{ current.average_visit_duration|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Стоимость:</strong> {{ current.average_cost|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Время посещения:</strong> {{ current.best_visit_time|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Режим работы:</strong> <pre>{{ current.working_hours_json|default:"—" }}</pre></li>
+                    <li class="list-group-item"><strong>Сезонное:</strong> {{ current.is_seasonal|yesno:"Да,Нет" }}</li>
+                    <li class="list-group-item"><strong>Месяцы:</strong> {{ current.seasonal_months|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Фото URL:</strong> {{ current.image_url|default:"—" }}</li>
+                    <li class="list-group-item"><strong>Адрес:</strong> {{ current.address|default:"—" }}</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+<form method="post" class="mt-4">
+    {% csrf_token %}
+    <div class="mb-3">
+        <label for="comment">Комментарий (при отклонении):</label>
+        <textarea name="comment" id="comment" class="form-control" rows="2"></textarea>
+    </div>
+    <button type="submit" name="action" value="approve" class="btn btn-success">Одобрить</button>
+    <button type="submit" name="action" value="reject" class="btn btn-danger">Отклонить</button>
+    <a href="{% url 'review_points' %}" class="btn btn-secondary">Назад</a>
+</form>
+{% endblock %}

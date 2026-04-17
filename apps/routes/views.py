@@ -1,10 +1,9 @@
 from django.conf import settings
 from django.shortcuts import render
-from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from openai import OpenAI
 from rest_framework import status, permissions
-from .models import City, Mood, CityArea, Feedback,Route, Point, Interest, PointEmbedding
+from .models import City, Mood, CityArea, Feedback, Route, Interest, PointEmbedding, Tag, Point
 from .serializers import CitySerializer, InterestSerializer, MoodSerializer
 from .services.generate_route import RoutePipeline, build_yandex_map_url
 from .services.route_metrics import calculate_total_cost, calculate_total_meters, haversine, calculate_route_times
@@ -12,9 +11,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from numpy import dot
 from numpy.linalg import norm
-
+from django.db import models
 from ..core.services import generate_embedding
-
+from django.utils import timezone
 
 # Форма ввода
 class FormDataView(APIView):

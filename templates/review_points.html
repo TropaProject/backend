@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% block title %}Проверка точек{% endblock %}
+{% block content %}
+<h2>Точки, ожидающие проверки</h2>
+
+<!-- Форма фильтрации -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label for="freelancer" class="form-label">Фрилансер</label>
+                <select name="freelancer" id="freelancer" class="form-select">
+                    <option value="">Все фрилансеры</option>
+                    {% for f in freelancers %}
+                        <option value="{{ f.id }}" {% if selected_freelancer == f.id %}selected{% endif %}>
+                            {{ f.user.username }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="date_from" class="form-label">Дата от</label>
+                <input type="date" name="date_from" id="date_from" class="form-control" value="{{ date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label for="date_to" class="form-label">Дата до</label>
+                <input type="date" name="date_to" id="date_to" class="form-control" value="{{ date_to }}">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">Применить</button>
+                <a href="{% url 'review_points' %}" class="btn btn-secondary">Сбросить</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Форма массовых действий -->
+<form method="post" id="reviewForm" onsubmit="return confirmMassAction()">
+    {% csrf_token %}
+    <div class="mb-3">
+        <div class="btn-group">
+            <button type="submit" name="action" value="approve_selected" class="btn btn-success">Одобрить выбранные</button>
+            <button type="submit" name="action" value="reject_selected" class="btn btn-danger">Отклонить выбранные</button>
+        </div>
+        <span class="ms-3" id="selectedCount">Выбрано: 0</span>
+    </div>
+    <div class="mb-3">
+        <label for="comment" class="form-label">Комментарий для отклонения (будет применён ко всем отклонённым точкам)</label>
+        <textarea name="comment" id="comment" class="form-control" rows="2" placeholder="Необязательно"></textarea>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="selectAllCheckbox"></th>
+                    <th>Название</th>
+                    <th>Город</th>
+                    <th>Фрилансер</th>
+                    <th>Дата отправки</th>
+                    <th>Действие</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for point in points %}
+                <tr>
+                    <td><input type="checkbox" name="selected_points" value="{{ point.id }}" class="point-checkbox"></td>
+                    <td>{{ point.name }}</td>
+                    <td>{{ point.city.name }}</td>
+                    <td>{{ point.assigned_to.user.username }}</td>
+                    <td>{{ point.edited_at|date:"d.m.Y H:i" }}</td>
+                    <td>
+                        <a href="{% url 'compare_point' point.id %}" class="btn btn-sm btn-info" target="_blank">Сравнить</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6">Нет точек на проверке.{% if selected_freelancer or date_from or date_to %} Попробуйте изменить фильтры.{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Пагинация -->
+    <div class="d-flex justify-content-between align-items-center mt-3">
+        <div>Показано {{ points.start_index }} - {{ points.end_index }} из {{ points.paginator.count }} точек</div>
+        <nav>
+            <ul class="pagination">
+                {% if points.has_previous %}
+                    <li class="page-item"><a class="page-link" href="?page=1&freelancer={{ selected_freelancer }}&date_from={{ date_from }}&date_to={{ date_to }}">&laquo; Первая</a></li>
+                    <li class="page-item"><a class="page-link" href="?page={{ points.previous_page_number }}&freelancer={{ selected_freelancer }}&date_from={{ date_from }}&date_to={{ date_to }}">Назад</a></li>
+                {% endif %}
+                <li class="page-item active"><span class="page-link">Страница {{ points.number }} из {{ points.paginator.num_pages }}</span></li>
+                {% if points.has_next %}
+                    <li class="page-item"><a class="page-link" href="?page={{ points.next_page_number }}&freelancer={{ selected_freelancer }}&date_from={{ date_from }}&date_to={{ date_to }}">Вперед</a></li>
+                    <li class="page-item"><a class="page-link" href="?page={{ points.paginator.num_pages }}&freelancer={{ selected_freelancer }}&date_from={{ date_from }}&date_to={{ date_to }}">Последняя &raquo;</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+</form>
+
+<script>
+    const checkboxes = document.querySelectorAll('.point-checkbox');
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const selectedCountSpan = document.getElementById('selectedCount');
+    const reviewForm = document.getElementById('reviewForm');
+
+    function updateSelectedCount() {
+        const checked = document.querySelectorAll('.point-checkbox:checked').length;
+        selectedCountSpan.textContent = `Выбрано: ${checked}`;
+        const allVisible = document.querySelectorAll('.point-checkbox').length;
+        selectAllCheckbox.checked = (checked === allVisible && allVisible > 0);
+    }
+
+    checkboxes.forEach(cb => cb.addEventListener('change', updateSelectedCount));
+
+    selectAllCheckbox.addEventListener('change', function(e) {
+        const isChecked = e.target.checked;
+        document.querySelectorAll('.point-checkbox').forEach(cb => cb.checked = isChecked);
+        updateSelectedCount();
+    });
+
+    function confirmMassAction() {
+        const checked = document.querySelectorAll('.point-checkbox:checked');
+        if (checked.length === 0) {
+            alert('Выберите хотя бы одну точку.');
+            return false;
+        }
+        const action = document.querySelector('button[name="action"]:focus')?.value;
+        if (action === 'reject_selected') {
+            const comment = document.getElementById('comment').value;
+            if (!comment) {
+                return confirm(`Вы действительно хотите отклонить ${checked.length} точек без комментария?`);
+            }
+            return confirm(`Отклонить ${checked.length} точек с комментарием?`);
+        } else if (action === 'approve_selected') {
+            return confirm(`Одобрить ${checked.length} точек и начислить оплату фрилансерам?`);
+        }
+        return true;
+    }
+
+    updateSelectedCount();
+</script>
+{% endblock %}

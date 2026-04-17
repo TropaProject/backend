@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}Панель фрилансера{% endblock %}
+{% block content %}
+<h2>Добро пожаловать, {{ user.username }}</h2>
+<div class="row mt-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Заработано всего</h5>
+                <p class="card-text display-6">{{ total_earned }} руб.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Ожидает выплаты</h5>
+                <p class="card-text display-6">{{ pending_earnings }} руб.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h3 class="mt-5">Точки, назначенные вам ({{ assigned_points|length }})</h3>
+<table class="table table-striped">
+    <thead>
+        <tr><th>Название</th><th>Город</th><th>Статус</th><th>Действия</th></tr>
+    </thead>
+    <tbody>
+        {% for point in assigned_points %}
+        <tr class="{% if point.has_unsaved_changes %}table-warning{% endif %}">
+            <td>{{ point.name }}
+                {% if point.has_unsaved_changes %}
+                    <span class="badge bg-warning text-dark">есть изменения</span>
+                {% endif %}
+            </td>
+            <td>{{ point.city.name }}</td>
+            <td>{{ point.get_edit_status_display }}</td>
+            <td>
+                <a href="{% url 'freelancer_edit_point' point.id %}" class="btn btn-sm btn-primary">Редактировать</a>
+                {% if point.edit_status == 'assigned' %}
+                <a href="{% url 'submit_point' point.id %}" class="btn btn-sm btn-success">Отправить на проверку</a>
+                {% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4">Нет назначенных точек.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h3>Точки на проверке ({{ edited_points|length }})</h3>
+<table class="table table-warning">
+    <thead><tr><th>Название</th><th>Город</th><th>Отправлено</th></tr></thead>
+    <tbody>
+        {% for point in edited_points %}
+        <tr><td>{{ point.name }}</td><td>{{ point.city.name }}</td><td>{{ point.edited_at|date:"d.m.Y H:i" }}</td></tr>
+        {% empty %}<tr><td colspan="3">Нет точек на проверке.</td></tr>{% endfor %}
+    </tbody>
+</table>
+
+<h3>История выплат</h3>
+<table class="table table-sm">
+    <thead><tr><th>Точка</th><th>Сумма</th><th>Дата одобрения</th><th>Статус</th></tr></thead>
+    <tbody>
+        {% for earn in earnings %}
+        <tr>
+            <td>{{ earn.point.name }}</td>
+            <td>{{ earn.amount }}</td>
+            <td>{{ earn.created_at|date:"d.m.Y" }}</td>
+            <td>{% if earn.paid %}Выплачено{% else %}Ожидает{% endif %}</td>
+        </tr>
+        {% empty %}<tr><td colspan="4">Нет начислений.</td></tr>{% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,3 +1,4 @@
+from datetime import timezone
 
 from .models import City, CityArea, Interest, Mood, Point, PointEmbedding, Route, Feedback, InterestCategory, Tag,ReviewPoint, FavoritePoint
 from django.contrib import admin
@@ -33,13 +34,6 @@ class InterestAdmin(admin.ModelAdmin):
 class MoodAdmin(admin.ModelAdmin):
     list_display = ("id", "label")
     search_fields = ("id", "label")
-
-
-@admin.register(Point)
-class PointAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "city", "average_visit_duration", "average_cost", "is_partner")
-    search_fields = ("id", "name", "city__name")
-    list_filter = ("city", "is_partner", "partner_tier",'interests')
 
 
 @admin.register(PointEmbedding)
@@ -113,3 +107,37 @@ class FavoritePointAdmin(admin.ModelAdmin):
             return ""
         return obj.note[:40] + ("..." if len(obj.note) > 40 else "")
     note_short.short_description = "Заметка"
+
+from django.contrib import admin
+from .models import Point, FreelancerProfile, PointEarning
+
+@admin.register(Point)
+class PointAdmin(admin.ModelAdmin):
+    list_display = ('name', 'city', 'edit_status', 'assigned_to', 'assigned_at', 'edited_at')
+    list_filter = ('edit_status', 'city', 'is_partner')
+    search_fields = ('name', 'address')
+    readonly_fields = ('snapshot_before_edit',)
+    fieldsets = (
+        ('Основное', {'fields': ('name', 'description', 'city', 'area', 'address', 'coordinates_lat', 'coordinates_lng')}),
+        ('Детали', {'fields': ('tags', 'interests', 'moods', 'keywords', 'average_visit_duration', 'average_cost')}),
+        ('Режим работы', {'fields': ('working_hours_json', 'best_visit_time', 'is_seasonal', 'seasonal_months')}),
+        ('Партнёрство', {'fields': ('is_partner', 'partner_tier', 'partner')}),
+        ('Статистика', {'fields': ('average_rating', 'reviews_count', 'view_count', 'success_rate', 'last_viewed_at')}),
+        ('Статус редактирования', {'fields': ('edit_status', 'assigned_to', 'assigned_at', 'edited_at', 'reviewed_by', 'review_comment', 'snapshot_before_edit')}),
+    )
+
+@admin.register(FreelancerProfile)
+class FreelancerProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'phone', 'assigned_city', 'total_earned', 'is_active')
+    search_fields = ('user__username', 'user__email', 'phone')
+    list_filter = ('is_active', 'assigned_city')
+
+@admin.register(PointEarning)
+class PointEarningAdmin(admin.ModelAdmin):
+    list_display = ('point', 'freelancer', 'amount', 'created_at', 'paid', 'paid_at')
+    list_filter = ('paid', 'created_at')
+    actions = ['mark_as_paid']
+
+    def mark_as_paid(self, request, queryset):
+        queryset.update(paid=True, paid_at=timezone.now())
+    mark_as_paid.short_description = "Отметить выбранные начисления как выплаченные"

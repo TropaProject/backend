@@ -61,7 +61,8 @@ LOCAL_APPS = [
     'apps.users',
     'apps.articles',
     'apps.core',
-    'apps.points'
+    'apps.points',
+    'apps.freelancer'
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -163,3 +164,5 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=14),
     "ROTATE_REFRESH_TOKENS": False,
     "BLACKLIST_AFTER_ROTATION": False}
+
+FREELANCER_PAYMENT_PER_POINT = 30  # рублей за одну одобренную точку
