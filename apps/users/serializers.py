@@ -9,24 +9,34 @@ User = get_user_model()
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    username = serializers.CharField(required=True)
+    avatar = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = User
-        fields = ("email", "password")
+        fields = ("username", "email", "password", "avatar")
 
     def validate_password(self, value):
         try:
-            validate_password(value)  # проверка только на длину ≥ 7
+            validate_password(value)
         except ValidationError as e:
             raise serializers.ValidationError(e.messages)
         return value
 
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Пользователь с таким email уже существует")
+        return value
     def create(self, validated_data):
+        avatar = validated_data.pop("avatar", None)
         user = User.objects.create_user(
-            username=validated_data["email"],  # используем email как username
+            username=validated_data["username"],
             email=validated_data["email"],
             password=validated_data["password"],
         )
+        if avatar:
+            user.profile.avatar = avatar
+            user.profile.save()
         return user
 
     def to_representation(self, instance):
@@ -36,8 +46,15 @@ class RegisterSerializer(serializers.ModelSerializer):
             "data": {
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
+                "user": {
+                    "id": instance.id,
+                    "username": instance.username,
+                    "email": instance.email,
+                    "avatar": instance.profile.avatar.url if instance.profile.avatar else None,
+                }
             },
         }
+
 
 
 class LoginSerializer(serializers.Serializer):

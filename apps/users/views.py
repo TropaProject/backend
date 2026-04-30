@@ -70,6 +70,10 @@ class UserView(APIView):
         )
 
 
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import permissions, status
+
 class UserRoutesListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -83,22 +87,43 @@ class UserRoutesListView(APIView):
         if status_filter:
             qs = qs.filter(status=status_filter)
 
+        total_count = qs.count()  # ← для пагинации
         routes = qs[offset:offset+limit]
 
-        data = [
-            {
+        data = []
+        for r in routes:
+            points = list(r.points.all())
+            main_point = None
+
+            # основная точка = первая из point_sequence
+            if r.point_sequence:
+                first_id = r.point_sequence[0]
+                main_point = next((p for p in points if str(p.id) == first_id), None)
+
+            # fallback: если sequence пустой или точка не найдена
+            if not main_point and points:
+                main_point = points[0]
+
+            data.append({
                 "route_id": r.id,
                 "description": r.description,
                 "total_duration": r.total_duration,
                 "total_cost": r.total_cost,
                 "status": r.status,
                 "created_at": r.created_at.isoformat(),
-                "updated_at": r.updated_at.isoformat() if hasattr(r, "updated_at") else None,
-            }
-            for r in routes
-        ]
+                "updated_at": getattr(r, "updated_at", None).isoformat() if hasattr(r, "updated_at") and r.updated_at else None,
+                "city": r.city.name if r.city else None,
+                "image": main_point.image_url if main_point else None,
+                "tag": main_point.tags.first().name if main_point and main_point.tags.exists() else None,
+                "interest": main_point.interests.first().label if main_point and main_point.interests.exists() else None,
+                "best_visit_time": main_point.best_visit_time[0] if main_point and main_point.best_visit_time else None,
+            })
 
-        return Response({"status": "success", "data": data}, status=status.HTTP_200_OK)
+        return Response(
+            {"status": "success", "total_count": total_count, "data": data},
+            status=status.HTTP_200_OK
+        )
+
 
 
 class UserStatisticsView(APIView):

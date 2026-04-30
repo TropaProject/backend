@@ -344,13 +344,18 @@ class RouteDetailView(APIView):
             )
 
         seq = route.point_sequence
-        point_map = {p.id: p for p in route.points.all()}
+        point_map = {str(p.id): p for p in route.points.all()}
 
         ordered_points = [point_map[pid] for pid in seq if pid in point_map]
 
         data = {
             "route_id": route.id,
-            "user_id": route.user.id if route.user else None,
+            "user": {
+                "id": route.user.id,
+                "username": route.user.username,
+                "email": route.user.email,
+            } if route.user else None,
+            "title": f"Маршрут {route.id[:8]}",
             "description": route.description,
             "total_duration": route.total_duration,
             "walk_time": route.walk_time,
@@ -364,21 +369,27 @@ class RouteDetailView(APIView):
                     "id": p.id,
                     "name": p.name,
                     "description": p.description,
-                    "average_rating": p.average_rating,
+                    "average_rating": float(p.average_rating),
                     "reviews_count": p.reviews_count,
                     "image_url": p.image_url,
                     "coordinates": {
                         "lat": float(p.coordinates_lat),
                         "lng": float(p.coordinates_lng),
                     },
+                    "working_hours": p.working_hours_json,
+                    "average_cost": p.average_cost,
+                    "city": p.city.name if p.city else None,
+                    "tags": [t.name for t in p.tags.all()],
+                    "interests": [i.label for i in p.interests.all()],
                 }
                 for p in ordered_points
             ],
             "created_at": route.created_at.isoformat(),
-            "updated_at": route.updated_at.isoformat() if hasattr(route, "updated_at") else None,
+            "updated_at": route.updated_at.isoformat() if hasattr(route, "updated_at") and route.updated_at else None,
         }
 
         return Response({"status": "success", "data": data}, status=status.HTTP_200_OK)
+
 
 
 class FeedbackView(APIView):

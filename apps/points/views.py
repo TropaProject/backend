@@ -1,4 +1,4 @@
-from rest_framework import permissions
+from rest_framework import permissions, status
 from apps.routes.models import Point, ReviewPoint, FavoritePoint
 from rest_framework.response import Response
 from django.db import models
@@ -211,28 +211,41 @@ class UserFavoritePointsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        favorites = (
+        limit = int(request.query_params.get("limit", 20))
+        offset = int(request.query_params.get("offset", 0))
+
+        qs = (
             FavoritePoint.objects
             .filter(user=request.user)
-            .select_related("point")
+            .select_related("point", "point__city")
             .order_by("-created_at")
         )
+
+        total_count = qs.count()
+        favorites = qs[offset:offset+limit]
 
         data = [
             {
                 "id": fav.point.id,
                 "name": fav.point.name,
                 "image_url": fav.point.image_url,
-                "description":fav.point.description,
+                "description": fav.point.description,
                 "average_rating": float(fav.point.average_rating),
                 "coordinates": {
                     "lat": float(fav.point.coordinates_lat),
                     "lng": float(fav.point.coordinates_lng),
                 },
-                "note": fav.note,  # ← заметка
-                "added_at": fav.created_at.isoformat()
+                "reviews_count": fav.point.reviews_count,
+                "working_hours": fav.point.working_hours_json,
+                "average_cost": fav.point.average_cost,
+                "city": fav.point.city.name if fav.point.city else None,
+                "note": fav.note,
+                "added_at": fav.created_at.isoformat(),
             }
             for fav in favorites
         ]
 
-        return Response({"status": "success", "data": data})
+        return Response(
+            {"status": "success", "total_count": total_count, "data": data},
+            status=status.HTTP_200_OK
+        )
