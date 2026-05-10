@@ -3,8 +3,8 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from openai import OpenAI
 from rest_framework import status, permissions
-from .models import City, Mood, CityArea, Feedback, Route, Interest, PointEmbedding, Tag, Point
-from .serializers import CitySerializer, InterestSerializer, MoodSerializer
+from .models import City, CitySuggestion, CitySuggestionVote, Mood, CityArea, Feedback, Route, Interest, PointEmbedding, Tag, Point
+from .serializers import CitySerializer, CitySuggestionSerializer, InterestSerializer, MoodSerializer
 from .services.generate_route import RoutePipeline, build_yandex_map_url
 from .services.route_metrics import calculate_total_cost, calculate_total_meters, haversine, calculate_route_times
 from rest_framework.views import APIView
@@ -12,6 +12,8 @@ from rest_framework.response import Response
 from numpy import dot
 from numpy.linalg import norm
 from django.db import models
+from django.db.models import Count, Exists, F, OuterRef
+from django.db import transaction
 from ..core.services import generate_embedding
 from django.utils import timezone
 
@@ -75,6 +77,323 @@ class CityAreaView(APIView):
         }
 
         return Response({"status": "success", "data": data}, status=status.HTTP_200_OK)
+
+
+def _normalize_city_name(name):
+    return " ".join(name.strip().lower().split())
+
+
+def _city_suggestions_queryset(user):
+    user_votes = CitySuggestionVote.objects.filter(suggestion=OuterRef("pk"), user=user)
+    return (
+        CitySuggestion.objects
+        .select_related("created_by")
+        .annotate(votes_count=Count("votes", distinct=True))
+        .annotate(has_voted=Exists(user_votes))
+    )
+
+
+class CitySuggestionListCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        search = request.query_params.get("search")
+        status_filter = request.query_params.get("status")
+        limit = int(request.query_params.get("limit", 50))
+        offset = int(request.query_params.get("offset", 0))
+
+        qs = _city_suggestions_queryset(request.user)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if search:
+            qs = qs.filter(name__icontains=search.strip())
+
+        qs = qs.order_by("-votes_count", "-created_at")
+        total_count = qs.count()
+        serializer = CitySuggestionSerializer(qs[offset:offset + limit], many=True)
+
+        return Response(
+            {"status": "success", "total_count": total_count, "data": serializer.data},
+            status=status.HTTP_200_OK,
+        )
+
+    def post(self, request):
+        name = str(request.data.get("name", "")).strip()
+        country = str(request.data.get("country", "")).strip() or None
+        comment = str(request.data.get("comment", "")).strip() or None
+
+        if not name:
+            return Response(
+                {"status": "error", "message": "name обязателен"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        existing_city = City.objects.filter(name__iexact=name).first()
+        if existing_city:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Этот город уже доступен в приложении",
+                    "data": CitySerializer(existing_city).data,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        normalized_name = _normalize_city_name(name)
+        with transaction.atomic():
+            suggestion, created = CitySuggestion.objects.get_or_create(
+                normalized_name=normalized_name,
+                defaults={
+                    "name": name,
+                    "country": country,
+                    "comment": comment,
+                    "created_by": request.user,
+                },
+            )
+            vote, voted_now = CitySuggestionVote.objects.get_or_create(
+                suggestion=suggestion,
+                user=request.user,
+            )
+
+        suggestion = _city_suggestions_queryset(request.user).get(id=suggestion.id)
+        serializer = CitySuggestionSerializer(suggestion)
+
+        return Response(
+            {
+                "status": "success",
+                "created": created,
+                "voted_now": voted_now,
+                "data": serializer.data,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class CitySuggestionVoteView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, suggestion_id):
+        try:
+            suggestion = CitySuggestion.objects.get(id=suggestion_id)
+        except CitySuggestion.DoesNotExist:
+            return Response(
+                {"status": "error", "message": "Предложенный город не найден"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        vote, voted_now = CitySuggestionVote.objects.get_or_create(
+            suggestion=suggestion,
+            user=request.user,
+        )
+        suggestion = _city_suggestions_queryset(request.user).get(id=suggestion.id)
+
+        return Response(
+            {
+                "status": "success",
+                "voted_now": voted_now,
+                "data": CitySuggestionSerializer(suggestion).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+def _route_author_payload(route):
+    if not route.user:
+        return None
+    return {
+        "id": route.user.id,
+        "username": route.user.username,
+        "email": route.user.email,
+    }
+
+
+def _route_main_point(route):
+    points = list(route.points.all())
+    if route.point_sequence:
+        first_id = str(route.point_sequence[0])
+        main_point = next((p for p in points if str(p.id) == first_id), None)
+        if main_point:
+            return main_point
+    return points[0] if points else None
+
+
+def _serialize_route_card(route, request_user=None):
+    main_point = _route_main_point(route)
+    is_owner = bool(request_user and request_user.is_authenticated and route.user_id == request_user.id)
+
+    return {
+        "route_id": route.id,
+        "title": route.title,
+        "description": route.description,
+        "total_duration": route.total_duration,
+        "total_cost": route.total_cost,
+        "total_meters": route.total_meters,
+        "status": route.status,
+        "is_public": route.is_public,
+        "is_owner": is_owner,
+        "author": _route_author_payload(route),
+        "public_uses_count": route.public_uses_count,
+        "original_route_id": route.original_route_id,
+        "created_at": route.created_at.isoformat(),
+        "updated_at": getattr(route, "updated_at", None).isoformat() if hasattr(route, "updated_at") and route.updated_at else None,
+        "city": route.city.name if route.city else None,
+        "image": main_point.image_url if main_point else None,
+        "tag": main_point.tags.first().name if main_point and main_point.tags.exists() else None,
+        "interest": main_point.interests.first().label if main_point and main_point.interests.exists() else None,
+        "best_visit_time": main_point.best_visit_time[0] if main_point and main_point.best_visit_time else None,
+    }
+
+
+def _serialize_route_detail(route, request_user=None):
+    seq = route.point_sequence
+    point_map = {str(p.id): p for p in route.points.all()}
+    ordered_points = [point_map[pid] for pid in seq if pid in point_map]
+    is_owner = bool(request_user and request_user.is_authenticated and route.user_id == request_user.id)
+
+    return {
+        "route_id": route.id,
+        "user": _route_author_payload(route),
+        "author": _route_author_payload(route),
+        "is_owner": is_owner,
+        "is_public": route.is_public,
+        "public_uses_count": route.public_uses_count,
+        "original_route_id": route.original_route_id,
+        "title": route.title,
+        "description": route.description,
+        "total_duration": route.total_duration,
+        "walk_time": route.walk_time,
+        "visit_time": route.visit_time,
+        "total_cost": route.total_cost,
+        "total_meters": route.total_meters,
+        "status": route.status,
+        "point_sequence": route.point_sequence,
+        "points": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "description": p.description,
+                "average_rating": float(p.average_rating),
+                "reviews_count": p.reviews_count,
+                "image_url": p.image_url,
+                "coordinates": {
+                    "lat": float(p.coordinates_lat),
+                    "lng": float(p.coordinates_lng),
+                },
+                "working_hours": p.working_hours_json,
+                "average_cost": p.average_cost,
+                "city": p.city.name if p.city else None,
+                "tags": [t.name for t in p.tags.all()],
+                "interests": [i.label for i in p.interests.all()],
+            }
+            for p in ordered_points
+        ],
+        "created_at": route.created_at.isoformat(),
+        "updated_at": getattr(route, "updated_at", None).isoformat() if hasattr(route, "updated_at") and route.updated_at else None,
+    }
+
+
+def _get_positive_int(value, default, max_value=100):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return default
+    if value < 0:
+        return default
+    return min(value, max_value)
+
+
+def _build_user_route_profile(user):
+    routes = (
+        Route.objects
+        .filter(user=user)
+        .prefetch_related("points__interests", "points__moods", "points__tags")
+        .order_by("-created_at")[:50]
+    )
+    profile = {
+        "city_ids": set(),
+        "interest_ids": set(),
+        "mood_ids": set(),
+        "tag_ids": set(),
+        "point_ids": set(),
+        "durations": [],
+        "copied_source_ids": set(),
+        "has_history": False,
+    }
+
+    for route in routes:
+        profile["has_history"] = True
+        if route.city_id:
+            profile["city_ids"].add(route.city_id)
+        if route.total_duration:
+            profile["durations"].append(route.total_duration)
+        if route.original_route_id:
+            profile["copied_source_ids"].add(str(route.original_route_id))
+
+        for point in route.points.all():
+            profile["point_ids"].add(str(point.id))
+            profile["interest_ids"].update(point.interests.values_list("id", flat=True))
+            profile["mood_ids"].update(point.moods.values_list("id", flat=True))
+            profile["tag_ids"].update(point.tags.values_list("id", flat=True))
+
+    return profile
+
+
+def _score_public_route_for_user(route, profile):
+    score = 0
+    reasons = []
+    route_points = list(route.points.all())
+
+    if route.public_uses_count:
+        score += min(route.public_uses_count * 3, 30)
+        reasons.append("popular")
+
+    if route.city_id and route.city_id in profile["city_ids"]:
+        score += 20
+        reasons.append("same_city")
+
+    route_interest_ids = set()
+    route_mood_ids = set()
+    route_tag_ids = set()
+    route_point_ids = set()
+
+    for point in route_points:
+        route_point_ids.add(str(point.id))
+        route_interest_ids.update(point.interests.values_list("id", flat=True))
+        route_mood_ids.update(point.moods.values_list("id", flat=True))
+        route_tag_ids.update(point.tags.values_list("id", flat=True))
+
+    interest_matches = len(route_interest_ids & profile["interest_ids"])
+    mood_matches = len(route_mood_ids & profile["mood_ids"])
+    tag_matches = len(route_tag_ids & profile["tag_ids"])
+    point_matches = len(route_point_ids & profile["point_ids"])
+
+    if interest_matches:
+        score += min(interest_matches * 6, 30)
+        reasons.append("matching_interests")
+    if mood_matches:
+        score += min(mood_matches * 4, 20)
+        reasons.append("matching_moods")
+    if tag_matches:
+        score += min(tag_matches * 2, 12)
+        reasons.append("matching_tags")
+    if point_matches:
+        score += min(point_matches * 8, 24)
+        reasons.append("familiar_places")
+
+    if route.total_duration and profile["durations"]:
+        avg_duration = sum(profile["durations"]) / len(profile["durations"])
+        diff = abs(route.total_duration - avg_duration)
+        if diff <= 30:
+            score += 10
+            reasons.append("similar_duration")
+        elif diff <= 60:
+            score += 5
+            reasons.append("near_duration")
+
+    if not reasons:
+        reasons.append("new_public_route")
+
+    return score, reasons
 
 
 class GenerateRouteView(APIView):
@@ -176,7 +495,8 @@ class GenerateRouteView(APIView):
                     walk_time=final_result.get("walk_time_minutes", 0),
                     visit_time=final_result.get("visit_time_minutes", 0),
                     city=city,
-                    description=name,
+                    title=name,
+                    description=final_result.get("description") or data.get("gpt_description") or name,
                     user=request.user,
                     point_sequence=[p.id for p in ordered_points],
                     status=Route.WalkStatus.GOING,
@@ -222,13 +542,17 @@ class GenerateRouteView(APIView):
             map_url = build_yandex_map_url([ep["coordinates"] for ep in enriched_points])
             response_data = {
                 "route_id": str(route.id),
-                "route_name": str(route.description),
+                "title": route.title,
+                "route_name": route.title,
+                "description": route.description,
                 "total_duration": route.total_duration,
                 "total_meters": route.total_meters,
                 "total_cost": route.total_cost,
                 "walk_time": route.walk_time,
                 "visit_time": route.visit_time,
                 "user_id": request.user.id,
+                "is_public": route.is_public,
+                "public_uses_count": route.public_uses_count,
                 "map_url": map_url,
                 "points": enriched_points,
             }
@@ -336,17 +660,22 @@ class RouteDetailView(APIView):
 
     def get(self, request, id_route):
         try:
-            route = Route.objects.get(id=id_route, user=request.user)
+            route = (
+                Route.objects
+                .select_related("user", "city", "original_route")
+                .prefetch_related("points__tags", "points__interests")
+                .get(models.Q(user=request.user) | models.Q(is_public=True), id=id_route)
+            )
         except Route.DoesNotExist:
             return Response(
                 {"status": "error", "message": "Маршрут не найден или не принадлежит пользователю"},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        seq = route.point_sequence
-        point_map = {str(p.id): p for p in route.points.all()}
-
-        ordered_points = [point_map[pid] for pid in seq if pid in point_map]
+        return Response(
+            {"status": "success", "data": _serialize_route_detail(route, request.user)},
+            status=status.HTTP_200_OK
+        )
 
         data = {
             "route_id": route.id,
@@ -390,6 +719,199 @@ class RouteDetailView(APIView):
 
         return Response({"status": "success", "data": data}, status=status.HTTP_200_OK)
 
+
+
+class PublicRoutesListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        city_id = request.query_params.get("city_id")
+        limit = int(request.query_params.get("limit", 20))
+        offset = int(request.query_params.get("offset", 0))
+
+        qs = (
+            Route.objects
+            .filter(is_public=True)
+            .select_related("user", "city", "original_route")
+            .prefetch_related("points__tags", "points__interests")
+            .order_by("-created_at")
+        )
+        if city_id:
+            qs = qs.filter(city_id=city_id)
+
+        total_count = qs.count()
+        data = [_serialize_route_card(route, request.user) for route in qs[offset:offset + limit]]
+
+        return Response(
+            {"status": "success", "total_count": total_count, "data": data},
+            status=status.HTTP_200_OK,
+        )
+
+
+class RecommendedPublicRoutesView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        city_id = request.query_params.get("city_id")
+        limit = _get_positive_int(request.query_params.get("limit"), 20, max_value=50)
+        offset = _get_positive_int(request.query_params.get("offset"), 0, max_value=1000)
+        exclude_copied = str(request.query_params.get("exclude_copied", "true")).lower() not in ("false", "0")
+
+        profile = _build_user_route_profile(request.user)
+        qs = (
+            Route.objects
+            .filter(is_public=True)
+            .exclude(user=request.user)
+            .select_related("user", "city", "original_route")
+            .prefetch_related("points__tags", "points__interests", "points__moods")
+            .order_by("-public_uses_count", "-created_at")
+        )
+        if city_id:
+            qs = qs.filter(city_id=city_id)
+        if exclude_copied and profile["copied_source_ids"]:
+            qs = qs.exclude(id__in=profile["copied_source_ids"])
+
+        total_count = qs.count()
+        candidate_pool_limit = max(300, offset + limit)
+        scored_routes = []
+        for route in qs[:candidate_pool_limit]:
+            score, reasons = _score_public_route_for_user(route, profile)
+            scored_routes.append((score, route.created_at, route, reasons))
+
+        scored_routes.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        paginated = scored_routes[offset:offset + limit]
+
+        data = []
+        for score, created_at, route, reasons in paginated:
+            route_data = _serialize_route_card(route, request.user)
+            route_data.update({
+                "recommendation_score": score,
+                "recommendation_reasons": reasons,
+                "can_copy": True,
+            })
+            data.append(route_data)
+
+        return Response(
+            {
+                "status": "success",
+                "total_count": total_count,
+                "data": data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class RouteVisibilityView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        route_id = request.data.get("route_id")
+        if not route_id:
+            return Response(
+                {"status": "error", "message": "route_id обязателен"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        raw_visibility = request.data.get("is_public", request.data.get("visibility"))
+        if raw_visibility is None:
+            return Response(
+                {"status": "error", "message": "is_public обязателен"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if isinstance(raw_visibility, bool):
+            is_public = raw_visibility
+        elif str(raw_visibility).lower() in ("true", "1", "public"):
+            is_public = True
+        elif str(raw_visibility).lower() in ("false", "0", "private"):
+            is_public = False
+        else:
+            return Response(
+                {"status": "error", "message": "is_public должен быть boolean"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            route = Route.objects.get(id=route_id, user=request.user)
+        except Route.DoesNotExist:
+            return Response(
+                {"status": "error", "message": "Маршрут не найден или не принадлежит пользователю"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        route.is_public = is_public
+        route.save(update_fields=["is_public"])
+
+        return Response(
+            {"status": "success", "data": _serialize_route_card(route, request.user)},
+            status=status.HTTP_200_OK,
+        )
+
+
+class CopyPublicRouteView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        route_id = request.data.get("route_id")
+        if not route_id:
+            return Response(
+                {"status": "error", "message": "route_id обязателен"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            with transaction.atomic():
+                source = (
+                    Route.objects
+                    .select_for_update()
+                    .select_related("user", "city")
+                    .prefetch_related("points")
+                    .get(id=route_id, is_public=True)
+                )
+
+                if source.user_id == request.user.id:
+                    return Response(
+                        {"status": "error", "message": "Нельзя скопировать собственный публичный маршрут"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                copied_route = Route.objects.create(
+                    total_duration=source.total_duration,
+                    walk_time=source.walk_time,
+                    visit_time=source.visit_time,
+                    total_cost=source.total_cost,
+                    total_meters=source.total_meters,
+                    city=source.city,
+                    title=source.title,
+                    description=source.description,
+                    lat0=source.lat0,
+                    lon0=source.lon0,
+                    user=request.user,
+                    point_sequence=list(source.point_sequence),
+                    status=Route.WalkStatus.GOING,
+                    is_public=False,
+                    original_route=source,
+                )
+                copied_route.points.set(source.points.all())
+                Route.objects.filter(id=source.id).update(public_uses_count=F("public_uses_count") + 1)
+                source.refresh_from_db(fields=["public_uses_count"])
+        except Route.DoesNotExist:
+            return Response(
+                {"status": "error", "message": "Публичный маршрут не найден"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(
+            {
+                "status": "success",
+                "data": {
+                    "route": _serialize_route_detail(copied_route, request.user),
+                    "source_route_id": source.id,
+                    "source_public_uses_count": source.public_uses_count,
+                },
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class FeedbackView(APIView):

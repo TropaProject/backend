@@ -63,7 +63,7 @@ class UserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        serializer = UserSerializer(request.user)
+        serializer = UserSerializer(request.user, context={"request": request})
         return Response(
             {"status": "success", "data": serializer.data},
             status=status.HTTP_200_OK
@@ -106,10 +106,14 @@ class UserRoutesListView(APIView):
 
             data.append({
                 "route_id": r.id,
+                "title": r.title,
                 "description": r.description,
                 "total_duration": r.total_duration,
                 "total_cost": r.total_cost,
                 "status": r.status,
+                "is_public": r.is_public,
+                "public_uses_count": r.public_uses_count,
+                "original_route_id": r.original_route_id,
                 "created_at": r.created_at.isoformat(),
                 "updated_at": getattr(r, "updated_at", None).isoformat() if hasattr(r, "updated_at") and r.updated_at else None,
                 "city": r.city.name if r.city else None,

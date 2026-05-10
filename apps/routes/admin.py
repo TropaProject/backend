@@ -1,6 +1,6 @@
 from datetime import timezone
 
-from .models import City, CityArea, Interest, Mood, Point, PointEmbedding, Route, Feedback, InterestCategory, Tag,ReviewPoint, FavoritePoint
+from .models import City, CityArea, CitySuggestion, CitySuggestionVote, Interest, Mood, Point, PointEmbedding, Route, Feedback, InterestCategory, Tag,ReviewPoint, FavoritePoint
 from django.contrib import admin
 
 
@@ -9,6 +9,25 @@ class CityAdmin(admin.ModelAdmin):
     list_display = ("id", "name", "latitude", "longitude")
     search_fields = ("id", "name")
     list_filter = ("name",)
+
+
+@admin.register(CitySuggestion)
+class CitySuggestionAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "country", "status", "created_by", "votes_count", "created_at")
+    search_fields = ("name", "normalized_name", "country", "created_by__username")
+    list_filter = ("status", "created_at", "country")
+    readonly_fields = ("created_at", "updated_at")
+
+    def votes_count(self, obj):
+        return obj.votes.count()
+    votes_count.short_description = "Голоса"
+
+
+@admin.register(CitySuggestionVote)
+class CitySuggestionVoteAdmin(admin.ModelAdmin):
+    list_display = ("id", "suggestion", "user", "created_at")
+    search_fields = ("suggestion__name", "user__username", "user__email")
+    list_filter = ("created_at",)
 
 
 @admin.register(CityArea)
@@ -44,9 +63,9 @@ class PointEmbeddingAdmin(admin.ModelAdmin):
 
 @admin.register(Route)
 class RouteAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "created_at", "total_duration", "total_cost", "status")
-    search_fields = ("id", "user__username")
-    list_filter = ("status", "created_at", "user")
+    list_display = ("id", "title", "user", "created_at", "total_duration", "total_cost", "status", "is_public", "public_uses_count")
+    search_fields = ("id", "title", "user__username")
+    list_filter = ("status", "is_public", "created_at", "user")
     filter_horizontal = ("points",)
 
 

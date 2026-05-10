@@ -85,6 +85,17 @@ class LoginSerializer(serializers.Serializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    avatar = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ("id", "email", "username", "date_joined")
+        fields = ("id", "email", "username", "avatar", "date_joined")
+
+    def get_avatar(self, obj):
+        profile = getattr(obj, "profile", None)
+        if not profile or not profile.avatar:
+            return None
+
+        request = self.context.get("request")
+        avatar_url = profile.avatar.url
+        return request.build_absolute_uri(avatar_url) if request else avatar_url

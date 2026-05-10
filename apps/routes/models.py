@@ -24,6 +24,57 @@ class City(models.Model):
         return self.name
 
 
+class CitySuggestion(models.Model):
+    class SuggestionStatus(models.TextChoices):
+        PENDING = "pending", "На рассмотрении"
+        APPROVED = "approved", "Одобрен"
+        REJECTED = "rejected", "Отклонен"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100)
+    normalized_name = models.CharField(max_length=100, unique=True)
+    country = models.CharField(max_length=100, null=True, blank=True)
+    comment = models.TextField(null=True, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="city_suggestions")
+    status = models.CharField(max_length=20, choices=SuggestionStatus.choices, default=SuggestionStatus.PENDING)
+    voters = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        through="CitySuggestionVote",
+        related_name="voted_city_suggestions",
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "city_suggestions"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["normalized_name"]),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class CitySuggestionVote(models.Model):
+    suggestion = models.ForeignKey(CitySuggestion, on_delete=models.CASCADE, related_name="votes")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="city_suggestion_votes")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "city_suggestion_votes"
+        unique_together = ("suggestion", "user")
+        indexes = [
+            models.Index(fields=["suggestion", "created_at"]),
+            models.Index(fields=["user", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} -> {self.suggestion_id}"
+
+
 class CityArea(models.Model):
     city = models.ForeignKey(City, on_delete=models.CASCADE, related_name="areas")
     name = models.CharField(max_length=255)
@@ -279,9 +330,20 @@ class Route(models.Model):
     total_cost = models.IntegerField(null=True, blank=True, help_text='Общий бюджет маршрута')
     total_meters = models.IntegerField(null=True, blank=True, help_text='Общее расстояние маршрута')
     city = models.ForeignKey("City", on_delete=models.CASCADE, related_name="routes", null=True, blank=True)
+    title = models.CharField(max_length=255, null=True, blank=True, help_text='Название маршрута')
     description = models.TextField(null=True, blank=True, help_text='Текстовый гид или описание маршрута')
     lat0 = models.DecimalField(max_digits=9, decimal_places=6, help_text='Широта', default=55.766157)
     lon0 = models.DecimalField(max_digits=9, decimal_places=6, help_text='Долгота', default=37.617797)
+    is_public = models.BooleanField(default=False, help_text="Route is visible to other users")
+    public_uses_count = models.PositiveIntegerField(default=0, help_text="How many times other users copied this route")
+    original_route = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        related_name="copied_routes",
+        null=True,
+        blank=True,
+        help_text="Public route this route was copied from",
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -308,6 +370,8 @@ class Route(models.Model):
         verbose_name_plural = 'Маршруты'
         indexes = [
             models.Index(fields=['user', 'created_at']),
+            models.Index(fields=['is_public', 'created_at']),
+            models.Index(fields=['original_route']),
         ]
 
     def __str__(self):
