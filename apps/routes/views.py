@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.http import HttpResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from openai import OpenAI
@@ -6,6 +7,7 @@ from rest_framework import status, permissions
 from .models import City, CitySuggestion, CitySuggestionVote, Mood, CityArea, Feedback, Route, Interest, PointEmbedding, Tag, Point
 from .serializers import CitySerializer, CitySuggestionSerializer, InterestSerializer, MoodSerializer
 from .services.generate_route import RoutePipeline, build_yandex_map_url
+from .services.route_pdf import build_route_pdf
 from .services.route_metrics import calculate_total_cost, calculate_total_meters, haversine, calculate_route_times
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -247,7 +249,7 @@ def _serialize_route_card(route, request_user=None):
 def _serialize_route_detail(route, request_user=None):
     seq = route.point_sequence
     point_map = {str(p.id): p for p in route.points.all()}
-    ordered_points = [point_map[pid] for pid in seq if pid in point_map]
+    ordered_points = [point_map[str(pid)] for pid in seq if str(pid) in point_map]
     is_owner = bool(request_user and request_user.is_authenticated and route.user_id == request_user.id)
 
     return {
@@ -275,6 +277,7 @@ def _serialize_route_detail(route, request_user=None):
                 "average_rating": float(p.average_rating),
                 "reviews_count": p.reviews_count,
                 "image_url": p.image_url,
+                "is_partner": p.is_partner,
                 "coordinates": {
                     "lat": float(p.coordinates_lat),
                     "lng": float(p.coordinates_lng),
@@ -718,6 +721,30 @@ class RouteDetailView(APIView):
         }
 
         return Response({"status": "success", "data": data}, status=status.HTTP_200_OK)
+
+
+class RoutePdfDownloadView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, id_route):
+        try:
+            route = (
+                Route.objects
+                .select_related("user", "city", "original_route")
+                .prefetch_related("points__tags", "points__interests")
+                .get(models.Q(user=request.user) | models.Q(is_public=True), id=id_route)
+            )
+        except Route.DoesNotExist:
+            return Response(
+                {"status": "error", "message": "Route not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        pdf = build_route_pdf(route)
+        filename = f"route-{str(route.id)[:8]}.pdf"
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 
@@ -1189,43 +1216,17 @@ class AddFoodPointView(APIView):
 
             # --- 10. Формируем ответ в нужном формате ---
 
-            # Берём точки как объекты Point
-            points_for_response = points_for_distance_and_cost
-
-            points_payload = []
-            for p in points_for_response:
-                points_payload.append({
-                    "id": str(p.id),
-                    "name": p.name,
-                    "description": p.description,
-                    "reason": p.description,  # временно reason = description
-                    "image_url": p.image_url if hasattr(p, "image_url") else None,
-                    "average_rating": p.average_rating,
-                    "reviews_count": p.reviews_count,
-                    "visit_time": f"{p.average_visit_duration or 30} мин",
-                    "tags": [t.name for t in p.tags.all()] if hasattr(p, "tags") else [],
-                    "coordinates": {
-                        "lat": float(p.coordinates_lat),
-                        "lng": float(p.coordinates_lng)
-                    }
-                })
-
-            response_payload = {
-                "status": "success",
-                "data": {
-                    "route_id": str(route.id),
-                    "user_id": route.user_id,
-                    "total_duration": route.total_duration,
-                    "total_meters": route.total_meters,
-                    "total_cost": route.total_cost,
-                    "walk_time": route.walk_time_minutes,
-                    "visit_time": route.visit_time_minutes,
-                    "route_name": route.description,
-                    "points": points_payload
-                }
-            }
-
-            return Response(response_payload, status=200)
+            # Возвращаем тот же формат, что и RouteDetailView.
+            route = (
+                Route.objects
+                .select_related("user", "city", "original_route")
+                .prefetch_related("points__tags", "points__interests")
+                .get(id=route.id)
+            )
+            return Response(
+                {"status": "success", "data": _serialize_route_detail(route, request.user)},
+                status=200
+            )
 
 
         except Route.DoesNotExist:

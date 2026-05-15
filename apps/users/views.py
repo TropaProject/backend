@@ -7,6 +7,9 @@ from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from .serializers import RegisterSerializer, LoginSerializer, UserSerializer
 from ..routes.models import Route,Point
 from django.db.models import Sum, Count, Max
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
@@ -64,6 +67,25 @@ class UserView(APIView):
 
     def get(self, request):
         serializer = UserSerializer(request.user, context={"request": request})
+        return Response(
+            {"status": "success", "data": serializer.data},
+            status=status.HTTP_200_OK
+        )
+
+
+class UserDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"status": "error", "message": "User not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = UserSerializer(user, context={"request": request})
         return Response(
             {"status": "success", "data": serializer.data},
             status=status.HTTP_200_OK

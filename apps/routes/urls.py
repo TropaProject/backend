@@ -16,6 +16,7 @@ urlpatterns = [
     path("copy-public/", CopyPublicRouteView.as_view(), name="copy-public-route"),
     path("cancel/", CancelRouteView.as_view(), name="cancel-route"),
     path("show/<str:id_route>/", RouteDetailView.as_view(), name="route-detail"),
+    path("show/<str:id_route>/pdf/", RoutePdfDownloadView.as_view(), name="route-download-pdf"),
     path("gen-description/", GenerateDescriptionView.as_view(), name="generate-description"),
     path("pipeline/", pipeline_view, name="pipeline"),
     path("add_food_point/", AddFoodPointView.as_view()),
