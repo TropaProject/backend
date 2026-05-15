@@ -101,6 +101,7 @@ class UserRoutesListView(APIView):
 
     def get(self, request):
         status_filter = request.query_params.get("status")
+        public_only = str(request.query_params.get("public_only", "")).lower() == "true"
         limit = int(request.query_params.get("limit", 20))
         offset = int(request.query_params.get("offset", 0))
 
@@ -108,6 +109,8 @@ class UserRoutesListView(APIView):
 
         if status_filter:
             qs = qs.filter(status=status_filter)
+        if public_only:
+            qs = qs.filter(is_public=True)
 
         total_count = qs.count()  # ← для пагинации
         routes = qs[offset:offset+limit]

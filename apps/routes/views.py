@@ -891,7 +891,6 @@ class CopyPublicRouteView(APIView):
                 source = (
                     Route.objects
                     .select_for_update()
-                    .select_related("user", "city")
                     .prefetch_related("points")
                     .get(id=route_id, is_public=True)
                 )
@@ -908,7 +907,7 @@ class CopyPublicRouteView(APIView):
                     visit_time=source.visit_time,
                     total_cost=source.total_cost,
                     total_meters=source.total_meters,
-                    city=source.city,
+                    city_id=source.city_id,
                     title=source.title,
                     description=source.description,
                     lat0=source.lat0,
