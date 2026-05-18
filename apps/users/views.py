@@ -11,6 +11,87 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+
+def _route_main_point(route):
+    points = list(route.points.all())
+    if route.point_sequence:
+        first_id = str(route.point_sequence[0])
+        main_point = next((p for p in points if str(p.id) == first_id), None)
+        if main_point:
+            return main_point
+    return points[0] if points else None
+
+
+def _serialize_public_route_card(route, request_user=None):
+    main_point = _route_main_point(route)
+    is_owner = bool(request_user and request_user.is_authenticated and route.user_id == request_user.id)
+
+    return {
+        "route_id": route.id,
+        "title": route.title,
+        "description": route.description,
+        "total_duration": route.total_duration,
+        "total_cost": route.total_cost,
+        "total_meters": route.total_meters,
+        "status": route.status,
+        "is_public": route.is_public,
+        "is_owner": is_owner,
+        "author": {
+            "id": route.user.id,
+            "username": route.user.username,
+            "email": route.user.email,
+        } if route.user else None,
+        "public_uses_count": route.public_uses_count,
+        "original_route_id": route.original_route_id,
+        "created_at": route.created_at.isoformat(),
+        "updated_at": getattr(route, "updated_at", None).isoformat() if hasattr(route, "updated_at") and route.updated_at else None,
+        "city": route.city.name if route.city else None,
+        "image": main_point.image_url if main_point else None,
+        "tag": main_point.tags.first().name if main_point and main_point.tags.exists() else None,
+        "interest": main_point.interests.first().label if main_point and main_point.interests.exists() else None,
+        "best_visit_time": main_point.best_visit_time[0] if main_point and main_point.best_visit_time else None,
+    }
+
+
+def _build_routes_statistics(routes_qs):
+    total_routes = routes_qs.count()
+    completed_routes = routes_qs.filter(status="done").count()
+    active_routes = routes_qs.filter(status="going").count()
+    total_duration = routes_qs.aggregate(Sum("total_duration"))["total_duration__sum"] or 0
+    total_cost = routes_qs.aggregate(Sum("total_cost"))["total_cost__sum"] or 0
+    total_distance_m = routes_qs.aggregate(Sum("total_meters"))["total_meters__sum"] or 0
+    last_activity = routes_qs.aggregate(Max("created_at"))["created_at__max"]
+    unique_places = Point.objects.filter(route__in=routes_qs).values("id").distinct().count()
+    favourite_city = (
+        routes_qs.values("city__name")
+        .annotate(cnt=Count("id"))
+        .order_by("-cnt")
+        .first()
+    )
+
+    return {
+        "total_routes": total_routes,
+        "completed_routes": completed_routes,
+        "active_routes": active_routes,
+        "total_duration_minutes": total_duration,
+        "total_distance_km": total_distance_m // 1000,
+        "total_cost": total_cost,
+        "unique_places": unique_places,
+        "favourite_city": favourite_city["city__name"] if favourite_city else None,
+        "last_activity": last_activity.isoformat() if last_activity else None,
+    }
+
+
+def _get_positive_int(value, default, max_value=100):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return default
+    if value < 0:
+        return default
+    return min(value, max_value)
+
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -77,6 +158,9 @@ class UserDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, user_id):
+        routes_limit = _get_positive_int(request.query_params.get("routes_limit"), 20)
+        routes_offset = _get_positive_int(request.query_params.get("routes_offset"), 0, max_value=1000)
+
         try:
             user = User.objects.get(id=user_id)
         except User.DoesNotExist:
@@ -86,8 +170,27 @@ class UserDetailView(APIView):
             )
 
         serializer = UserSerializer(user, context={"request": request})
+        public_routes_qs = (
+            Route.objects
+            .filter(user=user, is_public=True)
+            .select_related("user", "city", "original_route")
+            .prefetch_related("points__tags", "points__interests")
+            .order_by("-created_at")
+        )
+        public_routes_total_count = public_routes_qs.count()
+        public_routes = public_routes_qs[routes_offset:routes_offset + routes_limit]
+        all_routes_qs = Route.objects.filter(user=user)
+
+        data = dict(serializer.data)
+        data["statistics"] = _build_routes_statistics(all_routes_qs)
+        data["public_routes_total_count"] = public_routes_total_count
+        data["public_routes"] = [
+            _serialize_public_route_card(route, request.user)
+            for route in public_routes
+        ]
+
         return Response(
-            {"status": "success", "data": serializer.data},
+            {"status": "success", "data": data},
             status=status.HTTP_200_OK
         )
 

@@ -776,23 +776,34 @@ class PublicRoutesListView(APIView):
 
 
 class RecommendedPublicRoutesView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get(self, request):
         city_id = request.query_params.get("city_id")
         limit = _get_positive_int(request.query_params.get("limit"), 20, max_value=50)
         offset = _get_positive_int(request.query_params.get("offset"), 0, max_value=1000)
         exclude_copied = str(request.query_params.get("exclude_copied", "true")).lower() not in ("false", "0")
+        is_authenticated = request.user and request.user.is_authenticated
 
-        profile = _build_user_route_profile(request.user)
+        profile = _build_user_route_profile(request.user) if is_authenticated else {
+            "city_ids": set(),
+            "interest_ids": set(),
+            "mood_ids": set(),
+            "tag_ids": set(),
+            "point_ids": set(),
+            "durations": [],
+            "copied_source_ids": set(),
+            "has_history": False,
+        }
         qs = (
             Route.objects
             .filter(is_public=True)
-            .exclude(user=request.user)
             .select_related("user", "city", "original_route")
             .prefetch_related("points__tags", "points__interests", "points__moods")
             .order_by("-public_uses_count", "-created_at")
         )
+        if is_authenticated:
+            qs = qs.exclude(user=request.user)
         if city_id:
             qs = qs.filter(city_id=city_id)
         if exclude_copied and profile["copied_source_ids"]:
@@ -814,7 +825,7 @@ class RecommendedPublicRoutesView(APIView):
             route_data.update({
                 "recommendation_score": score,
                 "recommendation_reasons": reasons,
-                "can_copy": True,
+                "can_copy": is_authenticated,
             })
             data.append(route_data)
 
